@@ -149,3 +149,44 @@ def test_production_real_data_requires_persistence(monkeypatch,tmp_path):
     monkeypatch.setenv('APP_ENV','production');monkeypatch.setenv('DEMO_MODE','false');monkeypatch.setenv('DATA_DIR',str(tmp_path))
     monkeypatch.delenv('FIREBASE_CREDENTIALS_JSON',raising=False);monkeypatch.delenv('PERSISTENT_STORAGE',raising=False)
     with pytest.raises(RuntimeError,match='persistent DATA_DIR'):settings()
+
+def test_demo_signup_login_and_workspace_isolation(app):
+    a,b=app.test_client(),app.test_client()
+    creds={'email':'owner@example.test','password':'DemoPassword123!','role':'admin'}
+    assert post(a,'/api/demo/signup',creds).status_code==201
+    assert a.get('/api/session').json['user'] is None
+    assert post(a,'/api/demo/login',{**creds,'password':'WrongPassword'}).status_code==401
+    assert post(a,'/api/demo/login',creds).status_code==200
+    assert a.get('/api/session').json['demo'] is True
+    assert post(a,'/api/students',sample('PRIVATE-1')).status_code==201
+    assert post(a,'/api/logout').status_code==200
+    assert post(a,'/api/demo/login',creds).status_code==200
+    assert a.get('/api/students/PRIVATE-1').status_code==200
+    assert post(b,'/api/demo/signup',{'email':'second@example.test','password':'DemoPassword456!'}).status_code==201
+    assert post(b,'/api/demo/login',{'email':'second@example.test','password':'DemoPassword456!'}).status_code==200
+    assert b.get('/api/students/PRIVATE-1').status_code==404
+    assert post(b,'/api/login',creds).status_code==401
+    with app.extensions['store'].db() as db:
+        row=db.execute('SELECT * FROM demo_accounts WHERE email=?',(creds['email'],)).fetchone()
+        assert row['password'] != creds['password']
+        assert db.execute('SELECT 1 FROM users WHERE email=?',(creds['email'],)).fetchone() is None
+
+def test_demo_account_expiration_and_disabled_signup(app,client):
+    creds={'email':'expire@example.test','password':'TemporaryPassword!'}
+    assert post(client,'/api/demo/signup',creds).status_code==201
+    assert post(client,'/api/demo/login',creds).status_code==200
+    with app.extensions['store'].db() as db: db.execute('UPDATE demo_accounts SET expires=0')
+    assert client.get('/api/students').status_code==401
+    assert post(client,'/api/demo/login',creds).status_code==401
+    app.config['DEMO_MODE']=False
+    assert post(client,'/api/demo/signup',creds).status_code==404
+    assert post(client,'/api/demo/login',creds).status_code==404
+
+def test_demo_signup_csrf_validation_and_duplicate(client):
+    creds={'email':'new@example.test','password':'DemoPassword123!'}
+    assert client.post('/api/demo/signup',json=creds).status_code==403
+    assert post(client,'/api/demo/signup',{**creds,'email':'invalid'}).status_code==400
+    assert post(client,'/api/demo/signup',{**creds,'password':'tiny'}).status_code==400
+    assert post(client,'/api/demo/signup',creds).status_code==201
+    assert post(client,'/api/demo/signup',creds).status_code==409
+    assert client.get('/api/session').json['institution_login'] is False
