@@ -1,6 +1,40 @@
 # CampusGuard — Cloud-Based Student Data Protection
 
-A completed Flask application for managing student records with a professional, responsive dashboard and privacy controls. The uploaded project was incomplete; this version keeps its Python/Flask foundation, fixes the module structure and password verification, and supplies the missing interface and data services.
+A Flask application for managing student records with a responsive dashboard, encrypted storage, role-based permissions, and privacy review tools.
+
+## Live project
+
+**[Open CampusGuard](https://campusguard-student-protection.onrender.com/)**
+
+Choose **Create account**, then **Sign in**, or explore the **Admin**, **Staff**, and **Student** previews with fictional records. The free host may take about a minute to wake up. Hosted accounts and sample records are temporary: they expire after 24 hours and may disappear on a restart or redeploy.
+
+## Screenshots
+
+Captured from the live project using fictional sample data.
+
+| Create account | Sign in |
+| --- | --- |
+| ![Create account screen](campusguard-signup.jpg) | ![Sign-in screen](campusguard-signin.jpg) |
+
+### Workspace overview
+
+![Dashboard with student metrics and department chart](campusguard-dashboard.jpg)
+
+### Student directory
+
+![Searchable student directory with sample records](campusguard-directory.jpg)
+
+### Privacy center
+
+![Privacy center with consent and retention follow-up](campusguard-privacy.jpg)
+
+## Sample video
+
+**[Watch or download the 35-second project walkthrough](campusguard-walkthrough.mp4)**
+
+[![Open the project walkthrough](campusguard-dashboard.jpg)](campusguard-walkthrough.mp4)
+
+The captioned video walks through the account screens, dashboard, student directory, and privacy center using captured screenshots. Workspace views use the Admin sample preview. No personal credentials or real student records are shown.
 
 ## Features
 
@@ -20,9 +54,9 @@ A completed Flask application for managing student records with a professional, 
 
 Privacy flags help an administrator review records. They do not establish legal compliance. Encryption at rest is not end-to-end encryption: the authorized server can decrypt records.
 
-## Demo signup and login
+## Account signup and sign-in
 
-On the hosted demo, choose **Create account**, enter your email and a demo-only password, then choose **Sign in**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
+On the hosted project, choose **Create account**, enter your email and a password reserved for this sample workspace, then choose **Sign in**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
 
 ## Quick start
 
@@ -36,7 +70,7 @@ pip install -r backend/requirements.txt
 python backend/app.py
 ```
 
-Open `http://localhost:5000`. Select **Admin**, **Staff**, or **Student** under Interactive Demo. No passwords or external services are needed for the fictional demonstration. The student demo displays one record; staff emails are masked. Each new demo sign-in starts a fresh dataset. Temporary demo data is purged after one day when a subsequent demo session starts, and can disappear earlier if a free host restarts.
+Open `http://localhost:5000`. Select **Admin**, **Staff**, or **Student** under **Sample preview**. No passwords or external services are needed for the fictional demonstration. The student demo displays one record; staff emails are masked. Each new demo sign-in starts a fresh dataset. Temporary demo data is purged after one day when a subsequent demo session starts, and can disappear earlier if a free host restarts.
 
 For a real local workspace, provision accounts through the administrator-controlled CLI (verify the recipient's institutional email yourself first):
 
@@ -71,7 +105,7 @@ Manual web-service settings if you are not using a Blueprint:
 | SECRET_KEY | Separate randomly generated secret, at least 32 characters |
 | ENCRYPTION_KEY | Separate randomly generated secret, at least 32 characters |
 
-Render's free web services sleep when idle and lose local files on restarts/redeploys. Therefore, free SQLite hosting is suitable for the demonstration, not real student records. See [Render free-service limits](https://render.com/docs/free) and [Flask deployment](https://render.com/docs/deploy-flask). No deployment is claimed until a live URL has actually been returned and verified.
+Render's free web services sleep when idle and lose local files on restarts/redeploys. Therefore, free SQLite hosting is suitable for the demonstration, not real student records. See [Render free-service limits](https://render.com/docs/free) and [Flask deployment](https://render.com/docs/deploy-flask). The public live project is linked above; institutional Firebase access is not configured on that sample deployment.
 
 ## Real cloud records with Firebase
 
@@ -120,7 +154,7 @@ python tests/run_ui_checks.py
 
 The security/integration suite covers authentication, CSRF, account privilege restrictions, per-session demo isolation, staff masking, student ownership, validation, CSV atomicity, formula protection, encryption at rest, archive/restore, activity logging, revocation, live role changes, request throttling, and disabling demo access.
 
-The additional interface check exercises the real Gunicorn API through a simulated DOM (jsdom): demo sign-in, search, pagination, add/edit, archive/restore, privacy, activity, sign-out, staff masking, student restrictions, and quoted CSV parsing. It does not replace visual browser testing. This environment’s browser could not reach the local server, so visual desktop/mobile rendering remains unverified.
+The additional interface check exercises the real Gunicorn API through a simulated DOM (jsdom): demo sign-in, search, pagination, add/edit, archive/restore, privacy, activity, sign-out, staff masking, student restrictions, and quoted CSV parsing. It does not replace visual browser testing. The deployed desktop interface was visually checked in a browser; screenshots of its account screens, dashboard, directory, and privacy center appear above. Mobile rendering has not been separately verified.
 
 ## API
 
@@ -131,7 +165,8 @@ All writes require the session's `X-CSRF-Token`, returned by `GET /api/session`.
 | `/api/health` | GET | Health/version |
 | `/api/session` | GET | Session, CSRF token, capabilities |
 | `/api/login`, `/api/logout` | POST | Authentication/session revocation |
-| `/api/demo` | POST | Isolated fictional demo |
+| `/api/demo` | POST | Isolated fictional sample preview |
+| `/api/demo/signup`, `/api/demo/login` | POST | Temporary account creation / password sign-in |
 | `/api/students` | GET, POST | Directory / new student |
 | `/api/students/<id>` | GET, PUT, DELETE | Detail / edit / reversible archive |
 | `/api/students/<id>/restore` | POST | Restore an archive |
