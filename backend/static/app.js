@@ -7,12 +7,12 @@ const titles={overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your
 let state={user:null,csrf:'',page:'overview',rows:[],archived:[],events:[],overview:null,filter:'',department:'',status:'',tablePage:1,editId:null,archiveId:null,importRows:[],demo:false};
 let toastTimer,loadVersion=0,authMode='institution';
 function setAuthMode(mode){
- authMode=mode; $('#login-error').textContent='';
+ authMode=mode; $('#login-error').textContent=''; $('#login-success').textContent=''; $('#login-success').hidden=true;
  $('#login-form').elements.password.value='';
  $('#login-form').elements.password.autocomplete=mode==='demo-signup'?'new-password':'current-password';
  $('#login-form').elements.password.minLength=mode==='institution'?1:6;
- $('#auth-submit').textContent=mode==='demo-signup'?'Create demo account':mode==='demo-login'?'Sign in to demo':'Sign in';
- $('#login-description').textContent=mode==='demo-signup'?'Create an account for your private sample workspace.':mode==='demo-login'?'Sign in with the email and password you used for demo signup.':'Sign in with your institution account.';
+ $('#auth-submit').textContent=mode==='demo-signup'?'Create account':'Sign in';
+ $('#login-description').textContent=mode==='demo-signup'?'Create an account for your private sample workspace.':mode==='demo-login'?'Sign in with the email and password you used when creating your account.':'Sign in with your institution account.';
  document.querySelectorAll('[data-auth-mode]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.authMode===mode)));
 }
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.hidden=false;el.classList.toggle('failure',error);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,4500);}
@@ -36,7 +36,7 @@ async function enterWorkspace(){
  if(!session.user){showLogin();return;}
  $('#loading').hidden=true;$('#login-screen').hidden=true;$('#workspace').hidden=false;
  $('#account-role').textContent=roles[state.user.role];$('#account-email').textContent=state.user.email;$('#account-avatar').textContent=state.user.role.slice(0,1).toUpperCase();
- $('#demo-banner').hidden=!state.demo;$('#demo-notice').hidden=!state.demo;$('#workspace-type').textContent=state.demo?'Temporary demo workspace':'Institution workspace';
+ $('#demo-banner').hidden=!state.demo;$('#demo-notice').hidden=!state.demo;$('#workspace-type').textContent=state.demo?'Temporary sample workspace':'Institution workspace';
  document.querySelectorAll('.admin-only').forEach(el=>el.hidden=state.user.role!=='admin');
  state.page='overview';state.filter='';state.department='';state.status='';state.tablePage=1;
  await refresh();
@@ -143,7 +143,7 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('input',event=>{if(event.target.id==='directory-search'){state.filter=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='audit-search')renderAuditTable(event.target.value);});
 document.addEventListener('change',event=>{if(event.target.id==='department-filter'){state.department=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='status-filter'){state.status=event.target.value;state.tablePage=1;renderDirectoryTable();}});
-$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';await busy(form.querySelector('button'),async()=>{try{const mode=authMode;const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-error').textContent=result.message;toast('Demo account created. You can sign in now.');}else{form.reset();await enterWorkspace();}}catch(e){$('#login-error').textContent=e.message;}});});
+$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';$('#login-success').hidden=true;await busy(form.querySelector('button'),async()=>{try{const mode=authMode;const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-success').textContent=result.message;$('#login-success').hidden=false;toast('Account created successfully. You can sign in now.');}else{form.reset();await enterWorkspace();}}catch(e){$('#login-error').textContent=e.message;}});});
 $('#record-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#record-error').textContent='';await busy(form.querySelector('[type=submit]'),async()=>{try{const data=Object.fromEntries(new FormData(form));data.consent=form.elements.consent.checked;data.cgpa=Number(data.cgpa);data.year=Number(data.year);if(state.editId&&state.user.role==='staff')data.email=state.rows.find(r=>r.student_id===state.editId).email;await api('/api/students'+(state.editId?'/'+encodeURIComponent(state.editId):''),{method:state.editId?'PUT':'POST',body:JSON.stringify(data)});$('#record-dialog').close();await refresh();toast(state.editId?'Student updated':'Student added');}catch(e){$('#record-error').textContent=e.message;}});});
 $('#confirm-archive').addEventListener('click',async event=>busy(event.target,async()=>{try{await api('/api/students/'+encodeURIComponent(state.archiveId),{method:'DELETE'});$('#confirm-dialog').close();await refresh();toast('Record archived. You can restore it anytime.');}catch(e){$('#confirm-error').textContent=e.message;}}));
 $('#signout').addEventListener('click',async event=>busy(event.currentTarget,async()=>{try{await api('/api/logout',{method:'POST',body:'{}'});state.user=null;await enterWorkspace();toast('You have signed out');}catch(e){toast(e.message,true);}}));
