@@ -5,7 +5,16 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const roles={admin:'Administrator',staff:'Staff member',student:'Student'};
 const titles={overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your student records and privacy priorities.'],students:['ORGANIZED. ACCESSIBLE. PROTECTED.','Student directory','Manage student information with clear access and privacy controls.'],privacy:['PRIVACY BY DESIGN','Privacy center','Review consent, retention dates, and the protections behind your records.'],audit:['AN ACCOUNTABLE WORKSPACE','Activity log','Follow record changes, exports, and access events in your workspace.'],archive:['KEEP CONTROL OF YOUR RECORDS','Archive','Review archived records and restore them when needed.']};
 let state={user:null,csrf:'',page:'overview',rows:[],archived:[],events:[],overview:null,filter:'',department:'',status:'',tablePage:1,editId:null,archiveId:null,importRows:[],demo:false};
-let toastTimer,loadVersion=0;
+let toastTimer,loadVersion=0,authMode='institution';
+function setAuthMode(mode){
+ authMode=mode; $('#login-error').textContent='';
+ $('#login-form').elements.password.value='';
+ $('#login-form').elements.password.autocomplete=mode==='demo-signup'?'new-password':'current-password';
+ $('#login-form').elements.password.minLength=mode==='institution'?1:6;
+ $('#auth-submit').textContent=mode==='demo-signup'?'Create demo account':mode==='demo-login'?'Sign in to demo':'Sign in';
+ $('#login-description').textContent=mode==='demo-signup'?'Create an account for your private sample workspace.':mode==='demo-login'?'Sign in with the email and password you used for demo signup.':'Sign in with your institution account.';
+ document.querySelectorAll('[data-auth-mode]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.authMode===mode)));
+}
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.hidden=false;el.classList.toggle('failure',error);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,4500);}
 async function api(path,options={}){
  const headers={...options.headers};
@@ -20,6 +29,10 @@ function showLogin(){ $('#loading').hidden=true;$('#workspace').hidden=true;$('#
 async function enterWorkspace(){
  const session=await api('/api/session'); Object.assign(state,{user:session.user,csrf:session.csrf,demo:session.demo,storage:session.storage});
  $('#demo-entry').hidden=!session.demo_available;
+ $('#auth-modes').hidden=!session.demo_available;
+ $('#institution-mode').hidden=!session.institution_login;
+ $('#auth-help').hidden=!session.demo_available;
+ setAuthMode(session.demo_available&&!session.institution_login?'demo-login':'institution');
  if(!session.user){showLogin();return;}
  $('#loading').hidden=true;$('#login-screen').hidden=true;$('#workspace').hidden=false;
  $('#account-role').textContent=roles[state.user.role];$('#account-email').textContent=state.user.email;$('#account-avatar').textContent=state.user.role.slice(0,1).toUpperCase();
@@ -111,6 +124,7 @@ function parseCSV(text){
 }
 async function busy(button,work){button.disabled=true;try{await work();}finally{button.disabled=false;}}
 document.addEventListener('click',async event=>{
+ const authModeButton=event.target.closest('[data-auth-mode]');if(authModeButton){setAuthMode(authModeButton.dataset.authMode);return;}
  const close=event.target.closest('[data-close]');if(close){document.getElementById(close.dataset.close).close();return;}
  const nav=event.target.closest('[data-page]');if(nav){await navigate(nav.dataset.page);return;}
  const demo=event.target.closest('[data-demo]');if(demo){$('#login-error').textContent='';await busy(demo,async()=>{try{await api('/api/demo',{method:'POST',body:JSON.stringify({role:demo.dataset.demo})});await enterWorkspace();}catch(e){$('#login-error').textContent=e.message;}});return;}
@@ -129,7 +143,7 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('input',event=>{if(event.target.id==='directory-search'){state.filter=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='audit-search')renderAuditTable(event.target.value);});
 document.addEventListener('change',event=>{if(event.target.id==='department-filter'){state.department=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='status-filter'){state.status=event.target.value;state.tablePage=1;renderDirectoryTable();}});
-$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';await busy(form.querySelector('button'),async()=>{try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});form.reset();await enterWorkspace();}catch(e){$('#login-error').textContent=e.message;}});});
+$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';await busy(form.querySelector('button'),async()=>{try{const mode=authMode;const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-error').textContent=result.message;toast('Demo account created. You can sign in now.');}else{form.reset();await enterWorkspace();}}catch(e){$('#login-error').textContent=e.message;}});});
 $('#record-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#record-error').textContent='';await busy(form.querySelector('[type=submit]'),async()=>{try{const data=Object.fromEntries(new FormData(form));data.consent=form.elements.consent.checked;data.cgpa=Number(data.cgpa);data.year=Number(data.year);if(state.editId&&state.user.role==='staff')data.email=state.rows.find(r=>r.student_id===state.editId).email;await api('/api/students'+(state.editId?'/'+encodeURIComponent(state.editId):''),{method:state.editId?'PUT':'POST',body:JSON.stringify(data)});$('#record-dialog').close();await refresh();toast(state.editId?'Student updated':'Student added');}catch(e){$('#record-error').textContent=e.message;}});});
 $('#confirm-archive').addEventListener('click',async event=>busy(event.target,async()=>{try{await api('/api/students/'+encodeURIComponent(state.archiveId),{method:'DELETE'});$('#confirm-dialog').close();await refresh();toast('Record archived. You can restore it anytime.');}catch(e){$('#confirm-error').textContent=e.message;}}));
 $('#signout').addEventListener('click',async event=>busy(event.currentTarget,async()=>{try{await api('/api/logout',{method:'POST',body:'{}'});state.user=null;await enterWorkspace();toast('You have signed out');}catch(e){toast(e.message,true);}}));
