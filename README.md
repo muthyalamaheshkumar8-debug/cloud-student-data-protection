@@ -22,7 +22,7 @@ Privacy flags help an administrator review records. They do not establish legal 
 
 ## Demo signup and login
 
-On the hosted demo, choose **Create demo account**, enter your email and a demo-only password, then choose **Sign in to demo**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
+On the hosted demo, choose **Create account**, enter your email and a demo-only password, then choose **Sign in**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
 
 ## Quick start
 
