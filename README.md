@@ -20,6 +20,10 @@ A completed Flask application for managing student records with a professional, 
 
 Privacy flags help an administrator review records. They do not establish legal compliance. Encryption at rest is not end-to-end encryption: the authorized server can decrypt records.
 
+## Demo signup and login
+
+On the hosted demo, choose **Create demo account**, enter your email and a demo-only password, then choose **Sign in to demo**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
+
 ## Quick start
 
 Requires Python 3.12. Create a virtual environment, install dependencies, then launch:
