@@ -67,7 +67,15 @@ def load_user():
         if not current_app.config['DEMO_MODE']:
             session.clear()
             return
-        g.user=session.get('user')
+        if session.get('demo_account'):
+            with store().db() as db:
+                account=db.execute('SELECT id,email,workspace FROM demo_accounts WHERE id=? AND expires>?',(row['user_id'],time.time())).fetchone()
+            if not account or account['workspace'] != g.workspace:
+                session.clear()
+                return
+            g.user={'id':account['id'],'email':account['email'],'role':'admin'}
+        else:
+            g.user=session.get('user')
     elif store().cloud:
         from firebase_admin import auth
         try:

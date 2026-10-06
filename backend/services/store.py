@@ -26,6 +26,7 @@ class Store:
         with self.db() as db:
             db.executescript('''
             PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS demo_accounts (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, workspace TEXT UNIQUE NOT NULL, expires REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT, expires REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, start REAL NOT NULL);
@@ -114,7 +115,9 @@ class Store:
         # Browser demonstration workspaces are temporary; keep one day at most.
         cutoff = datetime.fromtimestamp(time.time()-86400, timezone.utc).isoformat()
         with self.db() as db:
-            expired = []
+            expired = [r['workspace'] for r in db.execute('SELECT workspace FROM demo_accounts WHERE expires <= ?',(time.time(),))]
+            db.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM demo_accounts WHERE expires <= ?)',(time.time(),))
+            db.execute('DELETE FROM demo_accounts WHERE expires <= ?',(time.time(),))
             for row in db.execute("SELECT workspace,payload FROM audit WHERE workspace LIKE 'demo-%'"):
                 if self.decode(row['payload'])['time'] < cutoff:
                     expired.append(row['workspace'])
