@@ -30,7 +30,7 @@ def create_app(overrides=None):
                 if not supplied or not expected or not hmac.compare_digest(supplied,expected):
                     return jsonify(error='Session expired. Refresh and try again.'),403
                 # No trusting spoofable forwarded headers. One production Gunicorn worker.
-                bucket='auth:'+request.remote_addr if request.path in ['/api/login','/api/register','/api/demo'] else 'write:'+session.get('sid',request.remote_addr or 'unknown')
+                bucket='auth:'+request.remote_addr if request.path in ['/api/login','/api/register','/api/demo','/api/demo/signup','/api/demo/login'] else 'write:'+session.get('sid',request.remote_addr or 'unknown')
                 cap=10 if bucket.startswith('auth:') else 120
                 if app.extensions['store'].limited(bucket,cap=cap):
                     return jsonify(error='Too many requests. Try again in one minute.'),429
