@@ -58,7 +58,7 @@ def logout():
 
 @bp.post('/api/demo')
 def demo():
-    if not current_app.config['DEMO_MODE']: return jsonify(error='Demo is disabled'),404
+    if not current_app.config['DEMO_MODE']: return jsonify(error='Sample access is disabled'),404
     role=payload().get('role','admin')
     if role not in ['admin','staff','student']: raise ValueError('Invalid demo role')
     store().purge_demo()
@@ -66,7 +66,7 @@ def demo():
     user={'id':uuid.uuid4().hex,'email':'student.demo@example.test' if role=='student' else role+'.demo@example.test','role':role}
     begin_session(user,workspace,True)
     seed_demo(workspace)
-    store().audit(workspace,'Demo workspace created',actor(),role)
+    store().audit(workspace,'Sample workspace created',actor(),role)
     return jsonify(user=public_user(),csrf=session['csrf'])
 
 def seed_demo(workspace):
@@ -85,12 +85,12 @@ def demo_credentials():
     if not isinstance(email,str) or len(email)>160 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email.strip()):
         raise ValueError('Enter a valid email address')
     if not isinstance(password,str) or not 6<=len(password)<=256:
-        raise ValueError('Use a demo password with 6–256 characters')
+        raise ValueError('Use a password with 6–256 characters')
     return email.strip().lower(),password
 
 @bp.post('/api/demo/signup')
 def demo_signup():
-    if not current_app.config['DEMO_MODE']: return jsonify(error='Demo is disabled'),404
+    if not current_app.config['DEMO_MODE']: return jsonify(error='Sample access is disabled'),404
     email,password=demo_credentials()
     store().purge_demo()
     uid=uuid.uuid4().hex
@@ -99,27 +99,27 @@ def demo_signup():
         with store().db() as db:
             db.execute('INSERT INTO demo_accounts VALUES (?,?,?,?,?)',(uid,email,generate_password_hash(password),workspace,time.time()+86400))
     except sqlite3.IntegrityError:
-        return jsonify(error='A demo account already uses this email. Try demo sign in.'),409
+        return jsonify(error='An account already uses this email. Choose Sign in.'),409
     try:
         seed_demo(workspace)
-        store().audit(workspace,'Demo account created','user-'+uid[:8],'admin')
+        store().audit(workspace,'Account created','user-'+uid[:8],'admin')
     except Exception:
         with store().db() as db:
             db.execute('DELETE FROM demo_accounts WHERE id=?',(uid,))
             db.execute('DELETE FROM students WHERE workspace=?',(workspace,))
             db.execute('DELETE FROM audit WHERE workspace=?',(workspace,))
         raise
-    return jsonify(message='Demo account created. Sign in with your email and demo password. Accounts expire after 24 hours and may disappear on a host restart.'),201
+    return jsonify(message='Account created successfully. Enter your password and choose Sign in.'),201
 
 @bp.post('/api/demo/login')
 def demo_login():
-    if not current_app.config['DEMO_MODE']: return jsonify(error='Demo is disabled'),404
+    if not current_app.config['DEMO_MODE']: return jsonify(error='Sample access is disabled'),404
     email,password=demo_credentials()
     store().purge_demo()
     with store().db() as db:
         row=db.execute('SELECT * FROM demo_accounts WHERE email=? AND expires>?',(email,time.time())).fetchone()
     ok=check_password_hash(row['password'] if row else current_app.extensions['dummy_password'],password)
-    if not row or not ok: return jsonify(error='Invalid demo email or password. Create a demo account first; expired accounts need to be created again.'),401
+    if not row or not ok: return jsonify(error='Invalid email or password. Create an account first. If your temporary account expired or the host restarted, create it again.'),401
     begin_session({'id':row['id'],'email':row['email'],'role':'admin'},row['workspace'],True)
     session['demo_account']=True
     store().audit(g.workspace,'Signed in',actor(),'admin')
