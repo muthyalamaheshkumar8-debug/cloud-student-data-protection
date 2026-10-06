@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: campusguard-student-protection
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && gunicorn --no-control-socket --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60 app:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: APP_ENV
+        value: production
+      - key: DEMO_MODE
+        value: 'true'
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true

@@ -1,44 +1,150 @@
-# Cloud-Based Student Data Protection System
+# CampusGuard — Cloud-Based Student Data Protection
+
+A completed Flask application for managing student records with a professional, responsive dashboard and privacy controls. The uploaded project was incomplete; this version keeps its Python/Flask foundation, fixes the module structure and password verification, and supplies the missing interface and data services.
 
 ## Features
-- Firebase Authentication
-- Role-Based Access Control
-- Cloud Firestore
--Project Structure
 
+- Dashboard with student totals, department distribution, consent coverage, average CGPA, and privacy follow-up.
+- Searchable directory with department/status filters and pagination.
+- Add/edit records with server validation; unique student IDs.
+- Three enforced roles: administrator, staff, student.
+- Staff email masking; students see only records matched to their provisioned account email.
+- Encrypted student payloads and encrypted activity entries at rest using Fernet authenticated encryption.
+- CSV import (1–100 records), validated before an atomic write; CSV export with email redaction by default and formula-injection protection.
+- Consent tracking and retention review dates, with explicit rule-based flags.
+- Reversible archive/restore; no permanent deletion through the application.
+- Read-only activity log for sign-ins, directory/record views, mutations, denied role access, imports, and exports.
+- CSRF validation, server-revocable sessions, 30-minute inactivity expiry, request limits, HTTP-only cookies, and security headers.
+- Separate temporary demonstration workspace for every demo sign-in, with fictional records and selectable roles.
+- Optional Firebase Authentication / Firestore integration for cloud use.
 
+Privacy flags help an administrator review records. They do not establish legal compliance. Encryption at rest is not end-to-end encryption: the authorized server can decrypt records.
 
+## Quick start
 
-cloud-student-data-protection/
-│
-├── backend/
-│   ├── app.py
-│   ├── config.py
-│   ├── firebase_config.py
-│   ├── requirements.txt
-│   │
-│   ├── routes/
-│   │   └── students.py
-│   │
-│   ├── services/
-│   │   └── student_service.py
-│   │
-│   └── utils/
-│       └── validation.py
-│
-├── firebase/
-│   └── firestore.rules
-│
-├── tests/
-│
-├── .gitignore
-├── README.md
-## Installation
+Requires Python 3.12. Create a virtual environment, install dependencies, then launch:
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 pip install -r backend/requirements.txt
-
-## Run
 python backend/app.py
+```
 
- ![Image Alt]([sk_eef5c51992b74df994df386dbd9a5d5b
-https://api.inceptionlabs.ai/v1
-mercury-2.5](https://github.com/muthyalamaheshkumar8-debug/cloud-student-data-protection/blob/330989f9966592dffaeb139b07764d2c99f20784/cloud.png))
+Open `http://localhost:5000`. Select **Admin**, **Staff**, or **Student** under Interactive Demo. No passwords or external services are needed for the fictional demonstration. The student demo displays one record; staff emails are masked. Each new demo sign-in starts a fresh dataset. Temporary demo data is purged after one day when a subsequent demo session starts, and can disappear earlier if a free host restarts.
+
+For a real local workspace, provision accounts through the administrator-controlled CLI (verify the recipient's institutional email yourself first):
+
+```bash
+cd backend
+python -m flask --app app create-admin
+python -m flask --app app create-user
+```
+
+These commands prompt privately for passwords. Self-registration is intentionally closed: allowing anyone to claim a student's email would expose that student's record. Use a verified institutional email for each student account.
+
+## Deploy on Render
+
+The included `render.yaml` configures a free Python web service with Gunicorn and a health check. The default deployment is an explicitly labeled sample-data demonstration.
+
+1. Commit this source to your GitHub repository.
+2. Sign in to Render and create a **Blueprint** from that repository, using `render.yaml`.
+3. Confirm the service uses the **Free** instance type.
+4. Render generates `SECRET_KEY` and `ENCRYPTION_KEY`; do not paste keys into source code or chats.
+5. Wait for a successful deployment, then open the URL returned by Render. Verify `/api/health` and all three demo roles.
+
+Manual web-service settings if you are not using a Blueprint:
+
+| Setting | Value |
+| --- | --- |
+| Runtime | Python 3 |
+| Build command | `pip install -r backend/requirements.txt` |
+| Start command | `cd backend && gunicorn --no-control-socket --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60 app:app` |
+| Health check | `/api/health` |
+| APP_ENV | `production` |
+| DEMO_MODE | `true` |
+| SECRET_KEY | Separate randomly generated secret, at least 32 characters |
+| ENCRYPTION_KEY | Separate randomly generated secret, at least 32 characters |
+
+Render's free web services sleep when idle and lose local files on restarts/redeploys. Therefore, free SQLite hosting is suitable for the demonstration, not real student records. See [Render free-service limits](https://render.com/docs/free) and [Flask deployment](https://render.com/docs/deploy-flask). No deployment is claimed until a live URL has actually been returned and verified.
+
+## Real cloud records with Firebase
+
+Before entering any real information:
+
+1. Create a Firebase project with Firestore and Email/Password Authentication.
+2. Deploy `firebase/firestore.rules` to deny direct browser access. The Flask Admin SDK performs authorized server operations. Server IAM must separately restrict credentials.
+3. Provision and verify user emails. Assign `role` custom claims (`admin`, `staff`, `student`) from a trusted administrator environment. Unrecognized/missing roles default to student.
+4. Configure `FIREBASE_CREDENTIALS_JSON` privately in the hosting environment using the service account JSON, and `FIREBASE_WEB_API_KEY` from your Firebase project.
+5. Set `DEMO_MODE=false`, `APP_ENV=production`, and configure separate persistent `SECRET_KEY` and `ENCRYPTION_KEY` values.
+6. Run a staging deployment with disposable records to verify Firebase authentication, revoked accounts, role claims, Firestore writes, and recovery. Firebase was not connected or tested against a live project in this delivery.
+
+Firebase sign-in uses its password-authentication endpoint, verifies the returned ID token with revocation checking, and requires verified email. Later requests fetch current user state and roles, honoring disabled accounts and token revocation. Student and audit records persist in Firestore, while sessions/rate limits stay in local SQLite. A host restart intentionally signs users out. This implementation targets one institution and one server instance; distributed rate limiting and multi-institution tenancy are outside its current scope.
+
+Local real-data hosting instead requires a persistent `DATA_DIR` and `PERSISTENT_STORAGE=true`. Production startup rejects missing secrets and ephemeral real-data configuration. Protect the encryption key: losing it makes stored records unreadable. Key rotation and an institutional backup/deletion policy must be managed before operational use.
+
+## Project structure
+
+```text
+backend/
+  app.py                 Flask application factory, security, CLI
+  config.py              Environment settings and startup safeguards
+  routes/auth.py         Verified account / demo session routes
+  routes/students.py     Records, privacy metrics, import/export, audit
+  services/store.py      Encrypted SQLite/Firestore record storage
+  services/auth_service.py Password verification and session lifecycle
+  utils/validation.py    Student validation and privacy flags
+  templates/index.html   Responsive dashboard and sign-in interface
+  static/                CSS, JavaScript, SVG favicon
+firebase/firestore.rules
+render.yaml
+.env.example
+tests/test_app.py
+```
+
+## Validation
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests -q
+node --check backend/static/app.js
+# Optional DOM/API interface checks (Node 22+):
+npm install
+python tests/run_ui_checks.py
+```
+
+The security/integration suite covers authentication, CSRF, account privilege restrictions, per-session demo isolation, staff masking, student ownership, validation, CSV atomicity, formula protection, encryption at rest, archive/restore, activity logging, revocation, live role changes, request throttling, and disabling demo access.
+
+The additional interface check exercises the real Gunicorn API through a simulated DOM (jsdom): demo sign-in, search, pagination, add/edit, archive/restore, privacy, activity, sign-out, staff masking, student restrictions, and quoted CSV parsing. It does not replace visual browser testing. This environment’s browser could not reach the local server, so visual desktop/mobile rendering remains unverified.
+
+## API
+
+All writes require the session's `X-CSRF-Token`, returned by `GET /api/session`. Role authorization is enforced on the server.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/health` | GET | Health/version |
+| `/api/session` | GET | Session, CSRF token, capabilities |
+| `/api/login`, `/api/logout` | POST | Authentication/session revocation |
+| `/api/demo` | POST | Isolated fictional demo |
+| `/api/students` | GET, POST | Directory / new student |
+| `/api/students/<id>` | GET, PUT, DELETE | Detail / edit / reversible archive |
+| `/api/students/<id>/restore` | POST | Restore an archive |
+| `/api/overview` | GET | Role-scoped metrics and privacy flags |
+| `/api/audit` | GET | Administrator activity log |
+| `/api/import` | POST | Atomic validated import |
+| `/api/export` | GET | Logged administrator CSV export |
+
+## Original upload security note
+
+An API credential embedded in the original README was removed. The exposed original credential should be revoked at its provider; removing it from this package does not revoke it or erase old repository history. No credentials, database files, or runtime-generated keys are included in the upgraded archive.
+
+## References
+
+- [Flask security](https://flask.palletsprojects.com/en/stable/web-security/)
+- [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
+- [Firebase custom claims](https://firebase.google.com/docs/auth/admin/custom-claims)
+- [Fernet authenticated encryption](https://cryptography.io/en/stable/fernet/)
+
+This is an engineering project, not a compliance certification. Real-data use needs institutional approval, access provisioning, tested recovery, and a retention/deletion process.

@@ -4,3 +4,12 @@ venv/
 __pycache__/
 serviceAccountKey.json
 
+backend/.data/
+.pytest_cache/
+*.db
+*.db-shm
+*.db-wal
+.env.*
+!.env.example
+node_modules/
+.venv/
