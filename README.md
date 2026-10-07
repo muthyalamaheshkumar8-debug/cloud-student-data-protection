@@ -10,11 +10,33 @@ Choose **Create account**, select **Student**, **Staff**, or **Admin**, then **S
 
 ## Screenshots
 
-The repository gallery shows an earlier interface using fictional sample data. The refreshed downloadable project includes the latest Student entry form and submitted-record screenshots.
+Screenshots captured from the live project using fictional sample data. The Student entry form and permission table show the latest data-entry and Admin review flow.
 
 | Create account | Sign in |
 | --- | --- |
 | ![Create account screen](campusguard-signup.jpg) | ![Sign-in screen](campusguard-signin.jpg) |
+
+### Student data entry and submitted details
+
+| Enter and edit your own details | Submitted record awaiting Admin review |
+| --- | --- |
+| ![Student data entry form](campusguard-student-edit.jpg) | ![Submitted Student details and review status](campusguard-student.jpg) |
+
+Students can submit their name, department, year, CGPA, and consent. Their ID and login email remain protected. Campus Admins see submissions automatically within five seconds and can review and approve the academic details.
+
+### Role-specific signup
+
+| Staff signup | Admin signup |
+| --- | --- |
+| ![Staff account creation with required Staff code](campusguard-signup-staff.jpg) | ![Admin account creation](campusguard-signup-admin.jpg) |
+
+### Campus accounts and Staff access
+
+| Registered accounts preview | Staff directory with masked emails |
+| --- | --- |
+| ![Admin Registered accounts sample preview](campusguard-accounts.jpg) | ![Staff record management](campusguard-staff.jpg) |
+
+Registered accounts hides real accounts in the public sample preview. Sign in with a campus Admin account to view enrolled Student and Staff accounts, copy both invitation codes, and see registration and presence updates.
 
 ### Workspace overview
 
@@ -30,11 +52,11 @@ The repository gallery shows an earlier interface using fictional sample data. T
 
 ## Sample video
 
-**[Watch or download the earlier project walkthrough](campusguard-walkthrough.mp4)**
+**[Watch or download the updated 75-second project walkthrough](campusguard-walkthrough.mp4)**
 
 [![Open the project walkthrough](campusguard-dashboard.jpg)](campusguard-walkthrough.mp4)
 
-The refreshed downloadable captioned video uses live screenshots to explain Student, Staff, and Admin signup, sign-in, Student data entry, Admin review, campus enrollment, live account visibility, and privacy review. The repository video shows an earlier interface; the updated video is supplied with the downloadable project. A confirmation card reproduces the implemented role-specific success messages. Workspace views use the corresponding sample previews. The account-directory preview intentionally contains no real accounts; a signed-in campus Admin sees enrolled Student and Staff accounts. No personal credentials or real student records are shown.
+The updated 75-second captioned walkthrough uses live screenshots to explain Student, Staff, and Admin signup, sign-in, Student data entry, Admin review, campus enrollment, live account visibility, and privacy review. A confirmation card reproduces the implemented role-specific success messages. Workspace views use the corresponding sample previews. The account-directory preview intentionally contains no real accounts; a signed-in campus Admin sees enrolled Student and Staff accounts. No personal credentials or real student records are shown.
 
 ## Features
 
@@ -53,7 +75,7 @@ The refreshed downloadable captioned video uses live screenshots to explain Stud
 - Searchable directory with department/status filters and pagination.
 - Add/edit records with server validation; unique student IDs.
 - Three enforced roles: administrator, staff, student.
-- Staff email masking; students see only records matched to their provisioned account email.
+- Staff email masking; students see and edit only their own account-bound record (verified email matching remains available for unbound institutional records).
 - Encrypted student payloads and encrypted activity entries at rest using Fernet authenticated encryption.
 - CSV import (1–100 records), validated before an atomic write; CSV export with email redaction by default and formula-injection protection.
 - Consent tracking and retention review dates, with explicit rule-based flags.
