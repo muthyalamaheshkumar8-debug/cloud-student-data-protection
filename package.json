@@ -1,7 +1,7 @@
 {
   "name": "campusguard-ui-checks",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "scripts": {
     "test:ui": "python tests/run_ui_checks.py",
     "test:live-ui": "python tests/run_ui_checks.py campus_live.cjs"

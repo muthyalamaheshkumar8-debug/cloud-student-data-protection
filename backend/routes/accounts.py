@@ -47,7 +47,7 @@ def accounts():
         age=current-row['last_seen'] if row['last_seen'] else float('inf')
         presence='Online' if active and age<20 else 'Idle' if active else 'Offline'
         record=linked.get(row['id'])
-        result.append(dict(id=row['id'],name=row['name'] or row['email'].split('@')[0],email=row['email'],role=row['role'],created_at=timestamp(row['created_at']),last_seen=timestamp(row['last_seen']),presence=presence,student_id=record['student_id'] if record else None))
+        result.append(dict(id=row['id'],name=record['name'] if record else row['name'] or row['email'].split('@')[0],email=row['email'],role=row['role'],created_at=timestamp(row['created_at']),last_seen=timestamp(row['last_seen']),presence=presence,student_id=record['student_id'] if record else None))
     return jsonify(accounts=result,campus_code=code,invite_codes=codes,refresh_seconds=5,sample_preview=False)
 
 @bp.get('/api/presence')

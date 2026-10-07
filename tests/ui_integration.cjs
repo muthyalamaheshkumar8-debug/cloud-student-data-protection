@@ -60,6 +60,11 @@ const find=selector=>w.document.querySelector(selector);
  click('[data-page="students"]');await wait(()=>find('#directory-table tbody'),'student directory');
  assert.equal(find('#directory-table tbody').children.length,1);
  assert.equal(find('[data-action="add"]'),null);
+ click('[data-action="edit"]');assert.equal(form.elements.email.disabled,true);assert.equal(form.elements.student_id.disabled,true);assert(form.elements.status.disabled&&form.elements.status.closest('label').hidden);
+ form.elements.name.value='Student Submitted';form.elements.department.value='Business';form.elements.year.value='4';form.elements.cgpa.value='9.25';form.elements.consent.checked=true;
+ form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await wait(()=>!find('#record-dialog').hasAttribute('open'),'student submitted');
+ await wait(()=>find('#directory-table').textContent.includes('Student Submitted')&&find('#directory-table').textContent.includes('9.25')&&find('#directory-table').textContent.includes('Awaiting Admin review'),'student details shown');
+
  click('#signout');await wait(()=>!find('#login-screen').hidden,'student logout');
  click('[data-auth-mode="demo-signup"]');
  const authForm=find('#login-form');

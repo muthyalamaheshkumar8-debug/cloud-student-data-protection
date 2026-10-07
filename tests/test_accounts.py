@@ -82,7 +82,8 @@ def test_enrolled_student_cannot_claim_existing_email_record(app):
     updated=student.get('/api/students/'+sid).json
     assert updated['cgpa']==8.75 and updated['academic_pending'] is False
     assert updated['account_id']==rows[0]['account_id']
-    assert post(student,'/api/students/'+sid,{'cgpa':10},'put').status_code==403
+    submitted=post(student,'/api/students/'+sid,{'cgpa':10},'put')
+    assert submitted.status_code==200 and submitted.json['academic_pending'] and submitted.json['student_submitted']
 
 def test_online_idle_offline_changes(app):
     owner,_=new_account(app,'owner@example.test','admin')

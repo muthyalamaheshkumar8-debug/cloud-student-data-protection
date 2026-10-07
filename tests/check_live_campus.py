@@ -7,7 +7,7 @@ import sys
 import requests
 
 base=sys.argv[1].rstrip('/')
-assert requests.get(base+'/api/health',timeout=30).json()['version']=='2.3.0'
+assert requests.get(base+'/api/health',timeout=30).json()['version']=='2.4.0'
 
 class Client:
     def __init__(self,role,name):
@@ -18,8 +18,8 @@ class Client:
         response=self.session.get(base+path,timeout=30)
         assert response.ok,(path,response.status_code,response.text)
         return response.json()
-    def post(self,path,data,expected=200):
-        response=self.session.post(base+path,json=data,headers={'X-CSRF-Token':self.csrf},timeout=30)
+    def post(self,path,data,expected=200,method="POST"):
+        response=self.session.request(method,base+path,json=data,headers={'X-CSRF-Token':self.csrf},timeout=30)
         assert response.status_code==expected,(path,response.status_code,response.text)
         result=response.json()
         if 'csrf' in result:self.csrf=result['csrf']
@@ -48,6 +48,17 @@ records=student.get('/api/students')['students']
 assert len(records)==1 and records[0]['account_id']==row['id'] and records[0]['academic_pending']
 for path in ['/api/accounts','/api/audit','/api/export']:
     assert student.session.get(base+path,timeout=30).status_code==403
+sid=records[0]['student_id']
+submitted=student.post('/api/students/'+sid,dict(name='Student Entered Details',department='Business',year=4,cgpa=9.25,consent=True),method='PUT')
+assert submitted['student_submitted'] and submitted['academic_pending']
+assert admin.get('/api/students/'+sid)['cgpa']==9.25
+assert next(a for a in admin.get('/api/accounts')['accounts'] if a['id']==row['id'])['name']=='Student Entered Details'
+student.post('/api/students/'+sid,{'email':'other@example.test'},403,method='PUT')
+student.post('/api/students/STU-2026001',{'cgpa':10},404,method='PUT')
+assert admin.post('/api/students/'+sid,{'cgpa':9.1},method='PUT')['academic_pending'] is False
+assert student.get('/api/students/'+sid)['cgpa']==9.1
+assert student.post('/api/students/'+sid,{'cgpa':9.3},method='PUT')['academic_pending']
+
 student.post('/api/logout',{})
 assert next(a for a in admin.get('/api/accounts')['accounts'] if a['id']==row['id'])['presence']=='Offline'
 staff=Client('staff','Verification Staff')
@@ -64,4 +75,4 @@ other=Client('admin','Other Verification Admin');other.signup();other.login()
 assert len(other.get('/api/accounts')['accounts'])==1
 assert not any(r.get('account_id')==row['id'] for r in other.get('/api/students')['students'])
 for client in (staff,other,admin):client.post('/api/logout',{})
-print('Live CampusGuard 2.3 checks passed: immediate distinct invitation codes, required matching Student/Staff codes, scoped Admin visibility, account-linked records, Online/Offline status, Staff masking, and role restrictions.')
+print('Live CampusGuard 2.4 checks passed: immediate distinct invitation codes, required matching Student/Staff codes, scoped Admin visibility, Student data entry and Admin review, account-linked records, Online/Offline status, Staff masking, and role restrictions.')

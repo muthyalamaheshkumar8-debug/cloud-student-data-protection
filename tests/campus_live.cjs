@@ -14,10 +14,10 @@ w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
 w.eval(fs.readFileSync(root+'/backend/static/app.js','utf8'));
 const find=s=>w.document.querySelector(s),click=s=>{assert(find(s),'Missing '+s);find(s).click();};
 const wait=async(fn,label)=>{const end=Date.now()+8000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('Timeout: '+label+'; '+find('#login-error')?.textContent);};
-async function post(client,path,data){
+async function post(client,path,data,method='POST'){
  if(!client.csrf)client.csrf=(await (await request(client,'/api/session')).json()).csrf;
- const response=await request(client,path,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':client.csrf},body:JSON.stringify(data)});
- const result=await response.json();assert(response.ok,JSON.stringify(result));if(result.csrf)client.csrf=result.csrf;return result;
+ const response=await request(client,path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':client.csrf},body:JSON.stringify(data)});
+ const result=await response.json();assert(response.ok,JSON.stringify(result));if(result.csrf)client.csrf=result.csrf;if(path==='/api/logout')client.csrf='';return result;
 }
 (async()=>{
  await wait(()=>!find('#login-screen').hidden,'sign-in');click('[data-auth-mode="demo-signup"]');
@@ -38,6 +38,9 @@ async function post(client,path,data){
  assert(find('#accounts-table').textContent.includes('Offline'));
  await post(student,'/api/demo/login',credentials);
  await wait(()=>find('#accounts-table').textContent.includes('Online'),'online presence');
+ const ownRecord=(await (await request(student,'/api/students')).json()).students[0];
+ await post(student,'/api/students/'+ownRecord.student_id,{name:'New Student',department:'Business',year:4,cgpa:9.25,consent:true},'PUT');
+
  await post(student,'/api/logout',{});
  await wait(()=>find('#accounts-table').textContent.includes('Offline'),'offline presence');
  failPoll=true;
@@ -45,7 +48,8 @@ async function post(client,path,data){
  await wait(()=>find('#live-status').textContent.includes('Live'),'automatic reconnection');
  assert.equal(find('#accounts-search').value,'New Student');
  click('[data-page="students"]');await wait(()=>find('#directory-table')?.textContent.includes('New Student'),'enrolled record');
- assert(find('#directory-table').textContent.includes('Pending review'));
+ assert(find('#directory-table').textContent.includes('Awaiting Admin review')&&find('#directory-table').textContent.includes('9.25'));
+ await post(student,'/api/demo/login',credentials);await post(student,'/api/students/'+ownRecord.student_id,{cgpa:9.5},'PUT');await wait(()=>find('#directory-table').textContent.includes('9.50'),'student changes appear automatically');
  const button=find('[data-action="edit"][data-id^="REG-"]');assert(button);button.click();
  const record=find('#record-form');record.elements.name.value='Reviewed Student';record.elements.cgpa.value='8.75';record.elements.year.value='3';record.elements.department.value='Electronics';
  const second={cookie:'',csrf:''};await post(second,'/api/demo/signup',{...credentials,email:'second@example.test',name:'Second Student'});

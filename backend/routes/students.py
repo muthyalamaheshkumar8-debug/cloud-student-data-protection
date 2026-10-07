@@ -1,6 +1,7 @@
 import csv
 import io
 import sqlite3
+import hashlib
 from google.api_core.exceptions import AlreadyExists
 from functools import wraps
 from flask import Blueprint, g, jsonify, request, session, Response
@@ -23,7 +24,7 @@ def require(*roles):
     return decorator
 
 def visible(r):
-    if g.user['role']=='student' and g.user.get('campus_member'):
+    if g.user['role']=='student' and (r.get('account_id') or g.user.get('campus_member')):
         return r.get('account_id')==g.user['id']
     return g.user['role']!='student' or r['email']==g.user['email']
 
@@ -62,9 +63,18 @@ def detail(sid):
     return jsonify(redact(r))
 
 @bp.post('/api/students')
-@require('admin','staff')
+@require('admin','staff','student')
 def create():
-    r=validate_student(json_payload())
+    d=json_payload()
+    if g.user['role']=='student':
+        if any(visible(r) for r in store().records(g.workspace)):
+            return jsonify(error='Your profile already exists. Use Edit my details.'),403
+        if set(d)-{'name','department','year','cgpa','consent'}:
+            return jsonify(error='Only your name, department, year, CGPA and consent can be submitted'),403
+        d.update(student_id='REG-'+hashlib.sha256(g.user['id'].encode()).hexdigest()[:20],email=g.user['email'],status='Active',retention_date='')
+    r=validate_student(d)
+    if g.user['role']=='student':
+        r.update(account_id=g.user['id'],student_submitted=True,academic_pending=True)
     if store().get(g.workspace,r['student_id']): return jsonify(error='Student ID already exists'),409
     r.update(created_at=now(),updated_at=now(),archived=False)
     try: store().write_many(g.workspace,[r],create=True)
@@ -73,11 +83,15 @@ def create():
     return jsonify(redact(r)),201
 
 @bp.put('/api/students/<sid>')
-@require('admin','staff')
+@require('admin','staff','student')
 def update(sid):
     old=store().get(g.workspace,sid)
-    if not old: return jsonify(error='Record not found'),404
+    if not old or not visible(old): return jsonify(error='Record not found'),404
     d=json_payload()
+    if g.user['role']=='student':
+        if old.get('archived'): return jsonify(error='An administrator must restore your archived record before editing'),403
+        if set(d)-{'name','department','year','cgpa','consent'}:
+            return jsonify(error='Only your name, department, year, CGPA and consent can be edited'),403
     if d.get('student_id',sid)!=sid: raise ValueError('Student ID cannot be changed')
     d['student_id']=sid
     if g.user['role']=='staff':
@@ -87,10 +101,14 @@ def update(sid):
         d['email']=old['email']
     r=validate_student({**old,**d})
     if old.get('account_id'): r['account_id']=old['account_id']
-    if old.get('academic_pending'): r['academic_pending']='cgpa' not in d and old.get('academic_pending',False)
+    if old.get('student_submitted'): r['student_submitted']=True
+    if g.user['role']=='student':
+        r.update(account_id=g.user['id'],student_submitted=True,academic_pending=True)
+    elif old.get('academic_pending'):
+        r['academic_pending']=not ('cgpa' in d and (g.user['role']=='admin' or not old.get('student_submitted')))
     r.update(created_at=old['created_at'],updated_at=now(),archived=old.get('archived',False))
     store().write_many(g.workspace,[r])
-    log('Student updated',sid)
+    log('Student details submitted' if g.user['role']=='student' else 'Student updated',sid)
     return jsonify(redact(r))
 
 @bp.delete('/api/students/<sid>')
