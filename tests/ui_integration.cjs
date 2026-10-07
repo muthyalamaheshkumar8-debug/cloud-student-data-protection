@@ -63,9 +63,9 @@ const find=selector=>w.document.querySelector(selector);
  click('#signout');await wait(()=>!find('#login-screen').hidden,'student logout');
  click('[data-auth-mode="demo-signup"]');
  const authForm=find('#login-form');
- authForm.elements.email.value='walkthrough@example.test';authForm.elements.password.value='DemoPassword123!';
+ authForm.elements.name.value='Walkthrough Admin';authForm.elements.role.value='admin';authForm.elements.confirm_password.value='DemoPassword123!';authForm.elements.email.value='walkthrough@example.test';authForm.elements.password.value='DemoPassword123!';
  authForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
- await wait(()=>!find('#login-success').hidden && find('#login-success').textContent.includes('Account created successfully'),'demo signup');
+ await wait(()=>!find('#login-success').hidden && find('#login-success').textContent.includes('Admin account created successfully'),'demo signup');
  assert.equal(authForm.elements.password.value,'');
  assert.equal(find('#auth-submit').textContent,'Sign in');
  assert.equal(find('#login-error').textContent,'');
@@ -76,6 +76,28 @@ const find=selector=>w.document.querySelector(selector);
  authForm.elements.email.value='walkthrough@example.test';authForm.elements.password.value='DemoPassword123!';
  authForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
  await wait(()=>find('#account-email').textContent==='walkthrough@example.test'&&!find('#workspace').hidden&&find('#page-body').textContent.includes('Recently updated students')&&!find('#auth-submit').disabled,'demo account return login');
+ click('#signout');await wait(()=>!find('#login-screen').hidden,'admin logout');
+ for(const role of ['student','staff']){
+  click('[data-auth-mode="demo-signup"]');
+  authForm.elements.name.value='Signup '+role;
+  authForm.elements.role.value=role;find('[name=role][value="'+role+'"]').dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert(find('#auth-submit').textContent.includes(role==='student'?'Student':'Staff'));
+  authForm.elements.email.value=role+'-signup@example.test';authForm.elements.password.value='RolePassword123!';authForm.elements.confirm_password.value='Mismatch';
+  authForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await wait(()=>find('#login-error').textContent==='Passwords do not match','mismatch');
+  authForm.elements.confirm_password.value='RolePassword123!';
+  authForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await wait(()=>!find('#login-success').hidden,'role signup');
+  assert(find('#login-success').textContent.includes(role==='student'?'Student account':'Staff account'));
+  authForm.elements.password.value='RolePassword123!';authForm.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await wait(()=>!find('#workspace').hidden&&find('#account-email').textContent===role+'-signup@example.test'&&!find('#auth-submit').disabled,'role login');
+  assert(find('#welcome-strip').textContent.includes('Signup '+role));
+  assert(find('[data-page="audit"]').hidden);
+  click('[data-page="students"]');await wait(()=>find('#directory-table tbody'),'role directory');
+  if(role==='student'){assert.equal(find('#directory-table tbody').children.length,1);assert(!find('[data-action="add"]'));}
+  else {assert(find('#directory-table').textContent.includes('•••'));assert(find('[data-action="add"]'));}
+  click('#signout');await wait(()=>!find('#login-screen').hidden,'role logout');
+ }
  console.log('UI integration passed: overview, search, pagination, add/edit, archive/restore, privacy, activity, logout, staff masking and student restrictions; CSV quote parser.');
  dom.window.close();
 })().catch(e=>{console.error(e);dom.window.close();process.exit(1);});

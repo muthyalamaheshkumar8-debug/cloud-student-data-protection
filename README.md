@@ -6,7 +6,7 @@ A Flask application for managing student records with a responsive dashboard, en
 
 **[Open CampusGuard](https://campusguard-student-protection.onrender.com/)**
 
-Choose **Create account**, then **Sign in**, or explore the **Admin**, **Staff**, and **Student** previews with fictional records. The free host may take about a minute to wake up. Hosted accounts and sample records are temporary: they expire after 24 hours and may disappear on a restart or redeploy.
+Choose **Create account**, select **Student**, **Staff**, or **Admin**, then **Sign in**, or explore the **Admin**, **Staff**, and **Student** previews with fictional records. The free host may take about a minute to wake up. Hosted accounts and sample records are temporary: they expire after 24 hours and may disappear on a restart or redeploy.
 
 ## Screenshots
 
@@ -38,6 +38,11 @@ The captioned video walks through the account screens, dashboard, student direct
 
 ## Features
 
+- Professional navy and blue interface with consistent contrast, buttons, and role cards.
+- Student, Staff, and Admin account signup with saved roles and role-specific success messages.
+- Full name, password confirmation, password visibility, and personalized sign-in welcome.
+- Student signup links a fictional record to the account email; staff emails are masked; admin tools include export, archive, restore, and activity logs.
+
 - Dashboard with student totals, department distribution, consent coverage, average CGPA, and privacy follow-up.
 - Searchable directory with department/status filters and pagination.
 - Add/edit records with server validation; unique student IDs.
@@ -56,7 +61,7 @@ Privacy flags help an administrator review records. They do not establish legal 
 
 ## Account signup and sign-in
 
-On the hosted project, choose **Create account**, enter your email and a password reserved for this sample workspace, then choose **Sign in**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Institution accounts remain administrator-provisioned.
+On the hosted project, choose **Create account**, enter your full name, select Student / Staff / Admin, and enter your email with a confirmed password reserved for this sample workspace, then choose **Sign in**. Passwords are salted and hashed; each account owns a separate fictional workspace and cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Student is the default role. The selected role is read from the saved account on every request and cannot be changed by submitting a different role at login. All self-created accounts, including Admin, remain isolated from institutional data. Existing temporary accounts retain their former Admin role through a database migration. Institution accounts remain administrator-provisioned.
 
 ## Quick start
 

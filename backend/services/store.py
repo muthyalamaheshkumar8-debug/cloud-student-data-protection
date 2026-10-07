@@ -33,6 +33,12 @@ class Store:
             CREATE TABLE IF NOT EXISTS students (workspace TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(workspace,id));
             CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, payload TEXT NOT NULL);
             ''')
+            # Preserve existing hosted accounts while adding signup profiles.
+            columns={r['name'] for r in db.execute('PRAGMA table_info(demo_accounts)')}
+            if 'role' not in columns:
+                db.execute("ALTER TABLE demo_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
+            if 'name' not in columns:
+                db.execute("ALTER TABLE demo_accounts ADD COLUMN name TEXT NOT NULL DEFAULT ''")
             db.execute('DELETE FROM sessions WHERE expires < ?', (time.time(),))
             db.execute('DELETE FROM limits WHERE start < ?', (time.time()-3600,))
 

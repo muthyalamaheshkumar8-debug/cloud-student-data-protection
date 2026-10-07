@@ -190,3 +190,50 @@ def test_demo_signup_csrf_validation_and_duplicate(client):
     assert post(client,'/api/demo/signup',creds).status_code==201
     assert post(client,'/api/demo/signup',creds).status_code==409
     assert client.get('/api/session').json['institution_login'] is False
+
+@pytest.mark.parametrize('role',['student','staff','admin'])
+def test_signup_role_persists_and_controls_access(client,role):
+    creds={'email':role+'@example.test','password':'RolePassword123!','name':'Sample '+role,'role':role}
+    r=post(client,'/api/demo/signup',creds)
+    assert r.status_code==201 and r.json['role']==role
+    assert r.json['message'].startswith(role.title()+' account created successfully')
+    # A login payload cannot upgrade the account's stored role.
+    assert post(client,'/api/demo/login',{**creds,'role':'admin'}).json['user']['role']==role
+    assert client.get('/api/session').json['user']['role']==role
+    assert client.get('/api/session').json['user']['name']==creds['name']
+    rows=client.get('/api/students').json['students']
+    if role=='student':
+        assert len(rows)==1 and rows[0]['email']==creds['email'] and rows[0]['name']==creds['name']
+        assert post(client,'/api/students',sample()).status_code==403
+        assert client.get('/api/students/STU-2026002').status_code==404
+    else:
+        assert len(rows)==12
+        assert post(client,'/api/students',sample()).status_code==201
+    if role=='staff': assert all(r.get('email_masked') for r in rows)
+    assert client.get('/api/audit').status_code==(200 if role=='admin' else 403)
+    assert client.get('/api/export').status_code==(200 if role=='admin' else 403)
+    post(client,'/api/logout')
+    assert post(client,'/api/demo/login',creds).json['user']['role']==role
+
+def test_signup_default_role_and_validation(client):
+    creds={'email':'default@example.test','password':'RolePassword123!'}
+    assert post(client,'/api/demo/signup',{**creds,'role':'superadmin'}).status_code==400
+    assert post(client,'/api/demo/signup',{**creds,'name':123}).status_code==400
+    assert post(client,'/api/demo/signup',{**creds,'name':'x'*101}).status_code==400
+    assert post(client,'/api/demo/signup',{**creds,'confirm_password':'different'}).status_code==400
+    assert post(client,'/api/demo/signup',creds).json['role']=='student'
+
+def test_existing_account_schema_migrates(tmp_path):
+    import sqlite3
+    import time
+    from werkzeug.security import generate_password_hash
+    from services.store import Store
+    path=tmp_path/'legacy.db'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE demo_accounts (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, workspace TEXT UNIQUE NOT NULL, expires REAL NOT NULL)')
+        db.execute('INSERT INTO demo_accounts VALUES (?,?,?,?,?)',('legacy','legacy@example.test',generate_password_hash('LegacyPassword'),'demo-legacy',time.time()+86400))
+    settings={'DATABASE':str(path),'ENCRYPTION_KEY':'e'*48}
+    Store(settings);store=Store(settings)  # Migration is safe to run more than once.
+    with store.db() as db:
+        row=db.execute('SELECT * FROM demo_accounts').fetchone()
+        assert row['role']=='admin' and row['name']==''

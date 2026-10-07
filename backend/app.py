@@ -49,7 +49,7 @@ def create_app(overrides=None):
     def index(): return render_template('index.html')
 
     @app.get('/api/health')
-    def health(): return jsonify(status='ok',application='CampusGuard',version='2.0.0')
+    def health(): return jsonify(status='ok',application='CampusGuard',version='2.1.0')
 
     @app.errorhandler(ValueError)
     def validation(error): return jsonify(error=str(error)),400

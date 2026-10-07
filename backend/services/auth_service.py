@@ -69,11 +69,11 @@ def load_user():
             return
         if session.get('demo_account'):
             with store().db() as db:
-                account=db.execute('SELECT id,email,workspace FROM demo_accounts WHERE id=? AND expires>?',(row['user_id'],time.time())).fetchone()
+                account=db.execute('SELECT id,email,workspace,role,name FROM demo_accounts WHERE id=? AND expires>?',(row['user_id'],time.time())).fetchone()
             if not account or account['workspace'] != g.workspace:
                 session.clear()
                 return
-            g.user={'id':account['id'],'email':account['email'],'role':'admin'}
+            g.user={'id':account['id'],'email':account['email'],'role':account['role'],'name':account['name']}
         else:
             g.user=session.get('user')
     elif store().cloud:
