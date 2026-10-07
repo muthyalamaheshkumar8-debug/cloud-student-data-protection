@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+import secrets
 import time
 import uuid
 from contextlib import contextmanager
@@ -32,6 +33,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, start REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS students (workspace TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(workspace,id));
             CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS campuses (workspace TEXT PRIMARY KEY, owner_id TEXT UNIQUE NOT NULL, join_code TEXT UNIQUE NOT NULL, expires REAL NOT NULL);
             ''')
             # Preserve existing hosted accounts while adding signup profiles.
             columns={r['name'] for r in db.execute('PRAGMA table_info(demo_accounts)')}
@@ -39,6 +41,12 @@ class Store:
                 db.execute("ALTER TABLE demo_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
             if 'name' not in columns:
                 db.execute("ALTER TABLE demo_accounts ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            for column,definition in [('campus_workspace',"TEXT NOT NULL DEFAULT ''"),('created_at','REAL NOT NULL DEFAULT 0'),('last_seen','REAL NOT NULL DEFAULT 0')]:
+                if column not in columns:
+                    db.execute(f'ALTER TABLE demo_accounts ADD COLUMN {column} {definition}')
+            db.execute('CREATE INDEX IF NOT EXISTS accounts_campus ON demo_accounts(campus_workspace)')
+            for account in db.execute("SELECT id,workspace,expires FROM demo_accounts WHERE role='admin' AND expires>? AND id NOT IN (SELECT owner_id FROM campuses)",(time.time(),)).fetchall():
+                db.execute('INSERT INTO campuses VALUES (?,?,?,?)',(account['workspace'],account['id'],'CG-'+secrets.token_hex(8).upper(),account['expires']))
             db.execute('DELETE FROM sessions WHERE expires < ?', (time.time(),))
             db.execute('DELETE FROM limits WHERE start < ?', (time.time()-3600,))
 
@@ -124,6 +132,7 @@ class Store:
             expired = [r['workspace'] for r in db.execute('SELECT workspace FROM demo_accounts WHERE expires <= ?',(time.time(),))]
             db.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM demo_accounts WHERE expires <= ?)',(time.time(),))
             db.execute('DELETE FROM demo_accounts WHERE expires <= ?',(time.time(),))
+            db.execute("DELETE FROM campuses WHERE expires <= ? OR owner_id NOT IN (SELECT id FROM demo_accounts WHERE role='admin' AND expires>?)",(time.time(),time.time()))
             for row in db.execute("SELECT workspace,payload FROM audit WHERE workspace LIKE 'demo-%'"):
                 if self.decode(row['payload'])['time'] < cutoff:
                     expired.append(row['workspace'])

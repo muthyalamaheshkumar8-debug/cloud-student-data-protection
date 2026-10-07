@@ -23,7 +23,8 @@ with tempfile.TemporaryDirectory() as temporary:
                 time.sleep(.1)
         else:
             raise RuntimeError('Gunicorn did not start')
-        result=subprocess.run(['node',str(root/'tests/ui_integration.cjs')],cwd=root)
+        script=sys.argv[1] if len(sys.argv)>1 else 'ui_integration.cjs'
+        result=subprocess.run(['node',str(root/'tests'/script)],cwd=root)
         sys.exit(result.returncode)
     finally:
         process.terminate()

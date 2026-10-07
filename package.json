@@ -1,9 +1,10 @@
 {
   "name": "campusguard-ui-checks",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.2.0",
   "scripts": {
-    "test:ui": "python tests/run_ui_checks.py"
+    "test:ui": "python tests/run_ui_checks.py",
+    "test:live-ui": "python tests/run_ui_checks.py campus_live.cjs"
   },
   "devDependencies": {
     "jsdom": "30.1.2"

@@ -23,6 +23,8 @@ def require(*roles):
     return decorator
 
 def visible(r):
+    if g.user['role']=='student' and g.user.get('campus_member'):
+        return r.get('account_id')==g.user['id']
     return g.user['role']!='student' or r['email']==g.user['email']
 
 def redact(r):
@@ -84,6 +86,8 @@ def update(sid):
             return jsonify(error='Only an administrator can change an existing email'),403
         d['email']=old['email']
     r=validate_student({**old,**d})
+    if old.get('account_id'): r['account_id']=old['account_id']
+    if old.get('academic_pending'): r['academic_pending']='cgpa' not in d and old.get('academic_pending',False)
     r.update(created_at=old['created_at'],updated_at=now(),archived=old.get('archived',False))
     store().write_many(g.workspace,[r])
     log('Student updated',sid)
@@ -116,8 +120,9 @@ def audit():
 @require()
 def overview():
     rows=[r for r in store().records(g.workspace) if not r.get('archived') and visible(r)]
+    graded=[r for r in rows if not r.get('academic_pending')]
     issues=[dict(student_id=r['student_id'],name=r['name'],issues=findings(r)) for r in rows if findings(r)]
-    return jsonify(total=len(rows),consent=sum(bool(r['consent']) for r in rows),average_cgpa=round(sum(r['cgpa'] for r in rows)/len(rows),2) if rows else 0,review_count=len(issues),issues=issues,departments=[{'name':d,'count':sum(r['department']==d for r in rows)} for d in DEPARTMENTS],archived=sum(bool(r.get('archived')) and visible(r) for r in store().records(g.workspace)))
+    return jsonify(total=len(rows),graded_count=len(graded),consent=sum(bool(r['consent']) for r in rows),average_cgpa=round(sum(r['cgpa'] for r in graded)/len(graded),2) if graded else 0,review_count=len(issues),issues=issues,departments=[{'name':d,'count':sum(r['department']==d for r in graded)} for d in DEPARTMENTS],archived=sum(bool(r.get('archived')) and visible(r) for r in store().records(g.workspace)))
 
 @bp.get('/api/export')
 @require('admin')
@@ -127,6 +132,7 @@ def export():
     out=io.StringIO(); w=csv.DictWriter(out,fieldnames=fields); w.writeheader()
     for r in store().records(g.workspace):
         if r.get('archived'): continue
+        if r.get('academic_pending'): r={**r,'department':'','year':'','cgpa':''}
         r={k:r[k] for k in fields}
         if masked: r['email']='[redacted]'
         # Neutralize spreadsheet formula injection.

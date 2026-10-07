@@ -69,11 +69,14 @@ def load_user():
             return
         if session.get('demo_account'):
             with store().db() as db:
-                account=db.execute('SELECT id,email,workspace,role,name FROM demo_accounts WHERE id=? AND expires>?',(row['user_id'],time.time())).fetchone()
-            if not account or account['workspace'] != g.workspace:
+                account=db.execute('SELECT id,email,workspace,campus_workspace,role,name FROM demo_accounts WHERE id=? AND expires>?',(row['user_id'],time.time())).fetchone()
+                if account and account['campus_workspace'] and not db.execute("SELECT 1 FROM campuses c JOIN demo_accounts o ON o.id=c.owner_id WHERE c.workspace=? AND c.expires>? AND o.expires>? AND o.role='admin'",(account['campus_workspace'],time.time(),time.time())).fetchone():
+                    account=None
+                if account: db.execute('UPDATE demo_accounts SET last_seen=? WHERE id=?',(time.time(),account['id']))
+            if not account or (account['campus_workspace'] or account['workspace']) != g.workspace:
                 session.clear()
                 return
-            g.user={'id':account['id'],'email':account['email'],'role':account['role'],'name':account['name']}
+            g.user={'id':account['id'],'email':account['email'],'role':account['role'],'name':account['name'],'campus_member':bool(account['campus_workspace'])}
         else:
             g.user=session.get('user')
     elif store().cloud:

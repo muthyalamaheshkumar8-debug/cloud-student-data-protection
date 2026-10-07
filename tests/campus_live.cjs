@@ -1,0 +1,67 @@
+const {JSDOM}=require('jsdom');
+const fs=require('fs'),assert=require('node:assert/strict');
+const root=require('node:path').resolve(__dirname,'..'),base='http://127.0.0.1:5005';
+const dom=new JSDOM(fs.readFileSync(root+'/backend/templates/index.html','utf8'),{url:base,runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window;const browser={cookie:'',csrf:''};let failPoll=false;
+async function request(client,path,options={}){
+ const response=await fetch(base+path,{...options,headers:{...options.headers,...(client.cookie?{Cookie:client.cookie}:{})}});
+ const cookie=response.headers.get('set-cookie');if(cookie)client.cookie=cookie.split(';')[0];
+ return response;
+}
+w.fetch=async(path,options={})=>{if(failPoll&&path==='/api/accounts'){failPoll=false;throw Error('Simulated connection loss');}return request(browser,path,options);};
+w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+w.eval(fs.readFileSync(root+'/backend/static/app.js','utf8'));
+const find=s=>w.document.querySelector(s),click=s=>{assert(find(s),'Missing '+s);find(s).click();};
+const wait=async(fn,label)=>{const end=Date.now()+8000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('Timeout: '+label+'; '+find('#login-error')?.textContent);};
+async function post(client,path,data){
+ if(!client.csrf)client.csrf=(await (await request(client,'/api/session')).json()).csrf;
+ const response=await request(client,path,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':client.csrf},body:JSON.stringify(data)});
+ const result=await response.json();assert(response.ok,JSON.stringify(result));if(result.csrf)client.csrf=result.csrf;return result;
+}
+(async()=>{
+ await wait(()=>!find('#login-screen').hidden,'sign-in');click('[data-auth-mode="demo-signup"]');
+ const form=find('#login-form');form.elements.name.value='Campus Admin';form.elements.role.value='admin';form.elements.email.value='admin@example.test';form.elements.password.value=form.elements.confirm_password.value='CampusPassword123!';
+ form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await wait(()=>!find('#login-success').hidden,'signup');
+ form.elements.password.value='CampusPassword123!';form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ await wait(()=>!find('#workspace').hidden&&find('#page-title').textContent==='Overview'&&!find('#auth-submit').disabled,'admin login');
+ click('[data-page="accounts"]');await wait(()=>find('#campus-code'),'account directory');
+ const code=find('#campus-code').textContent;assert(code.startsWith('CG-'));
+ const search=find('#accounts-search');search.value='New Student';search.dispatchEvent(new w.Event('input',{bubbles:true}));search.focus();
+ const student={cookie:'',csrf:''};const credentials={email:'student@example.test',password:'StudentPassword123!',role:'student',name:'New Student',campus_code:code};
+ await post(student,'/api/demo/signup',credentials);
+ await wait(()=>find('#accounts-table').textContent.includes('New Student'),'new registration appears without refresh');
+ assert.equal(find('#accounts-search'),search);assert.equal(w.document.activeElement,search);assert.equal(search.value,'New Student');
+ assert(find('#accounts-table').textContent.includes('Offline'));
+ await post(student,'/api/demo/login',credentials);
+ await wait(()=>find('#accounts-table').textContent.includes('Online'),'online presence');
+ await post(student,'/api/logout',{});
+ await wait(()=>find('#accounts-table').textContent.includes('Offline'),'offline presence');
+ failPoll=true;
+ await wait(()=>find('#live-status').textContent.includes('Connection lost'),'connection failure visible');
+ await wait(()=>find('#live-status').textContent.includes('Live'),'automatic reconnection');
+ assert.equal(find('#accounts-search').value,'New Student');
+ click('[data-page="students"]');await wait(()=>find('#directory-table')?.textContent.includes('New Student'),'enrolled record');
+ assert(find('#directory-table').textContent.includes('Pending review'));
+ const button=find('[data-action="edit"][data-id^="REG-"]');assert(button);button.click();
+ const record=find('#record-form');record.elements.name.value='Reviewed Student';record.elements.cgpa.value='8.75';record.elements.year.value='3';record.elements.department.value='Electronics';
+ const second={cookie:'',csrf:''};await post(second,'/api/demo/signup',{...credentials,email:'second@example.test',name:'Second Student'});
+ await new Promise(r=>setTimeout(r,5200));assert(find('#record-dialog').hasAttribute('open'));assert.equal(record.elements.name.value,'Reviewed Student');
+ record.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await wait(()=>!find('#record-dialog').hasAttribute('open'),'review saved');
+ await wait(()=>find('#directory-table')?.textContent.includes('Reviewed Student')&&find('#nav-count').textContent==='14','record and registration refreshed');
+ click('#signout');await wait(()=>!find('#login-screen').hidden,'logout');assert(find('#workspace').hidden);
+ const existing={cookie:'',csrf:''};const existingCredentials={email:'existing@example.test',password:'ExistingStudentPassword!',role:'student',name:'Existing Student'};
+ await post(existing,'/api/demo/signup',existingCredentials);
+ form.elements.email.value=existingCredentials.email;form.elements.password.value=existingCredentials.password;form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ await wait(()=>find('[data-action="join-campus"]')&&find('#nav-count').textContent==='1','existing student login');
+ click('[data-action="join-campus"]');const enrollment=find('#join-campus-form');enrollment.elements.campus_code.value=code;
+ enrollment.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ await wait(()=>!find('#join-campus-dialog').hasAttribute('open')&&find('#page-body').textContent.includes('Existing Student')&&!find('[data-action="join-campus"]'),'existing student enrolled');
+ assert(find('[data-page="accounts"]').hidden);
+ const owner={cookie:'',csrf:''};await post(owner,'/api/demo/login',{email:'admin@example.test',password:'CampusPassword123!'});
+ const accountData=await (await request(owner,'/api/accounts')).json();assert.equal(accountData.accounts.length,4);
+ assert(accountData.accounts.some(a=>a.email==='existing@example.test'));
+ click('#signout');await wait(()=>!find('#login-screen').hidden,'student logout');
+ console.log('Campus live UI passed: shared enrollment, automatic registration updates, preserved search, online/offline presence, reconnection, protected editing, and logout.');
+ dom.window.close();
+})().catch(e=>{console.error(e);dom.window.close();process.exit(1);});

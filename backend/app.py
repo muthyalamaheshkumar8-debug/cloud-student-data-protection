@@ -10,6 +10,7 @@ from services.store import Store
 from services.auth_service import load_user, create_user
 from routes.auth import bp as auth_bp
 from routes.students import bp as students_bp
+from routes.accounts import bp as accounts_bp
 
 
 def create_app(overrides=None):
@@ -19,6 +20,7 @@ def create_app(overrides=None):
     app.extensions['store']=Store(app.config)
     app.extensions['dummy_password']=generate_password_hash(secrets.token_urlsafe(32))
     app.register_blueprint(auth_bp); app.register_blueprint(students_bp)
+    app.register_blueprint(accounts_bp)
 
     @app.before_request
     def security():
@@ -30,7 +32,7 @@ def create_app(overrides=None):
                 if not supplied or not expected or not hmac.compare_digest(supplied,expected):
                     return jsonify(error='Session expired. Refresh and try again.'),403
                 # No trusting spoofable forwarded headers. One production Gunicorn worker.
-                bucket='auth:'+request.remote_addr if request.path in ['/api/login','/api/register','/api/demo','/api/demo/signup','/api/demo/login'] else 'write:'+session.get('sid',request.remote_addr or 'unknown')
+                bucket='auth:'+request.remote_addr if request.path in ['/api/login','/api/register','/api/demo','/api/demo/signup','/api/demo/login','/api/campus/join'] else 'write:'+session.get('sid',request.remote_addr or 'unknown')
                 cap=10 if bucket.startswith('auth:') else 120
                 if app.extensions['store'].limited(bucket,cap=cap):
                     return jsonify(error='Too many requests. Try again in one minute.'),429
@@ -49,7 +51,7 @@ def create_app(overrides=None):
     def index(): return render_template('index.html')
 
     @app.get('/api/health')
-    def health(): return jsonify(status='ok',application='CampusGuard',version='2.1.0')
+    def health(): return jsonify(status='ok',application='CampusGuard',version='2.2.0')
 
     @app.errorhandler(ValueError)
     def validation(error): return jsonify(error=str(error)),400

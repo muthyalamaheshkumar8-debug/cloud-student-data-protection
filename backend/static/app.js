@@ -5,9 +5,10 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const roles={admin:'Administrator',staff:'Staff member',student:'Student'};
 const signupRoles={student:'Student',staff:'Staff',admin:'Admin'};
 const roleHelp={student:'View your own student record and privacy status.',staff:'Add and edit students. Emails stay masked; export and archive are restricted.',admin:'Manage students, export data, archive records, and review activity.'};
-const titles={overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your student records and privacy priorities.'],students:['ORGANIZED. ACCESSIBLE. PROTECTED.','Student directory','Manage student information with clear access and privacy controls.'],privacy:['PRIVACY BY DESIGN','Privacy center','Review consent, retention dates, and the protections behind your records.'],audit:['AN ACCOUNTABLE WORKSPACE','Activity log','Follow record changes, exports, and access events in your workspace.'],archive:['KEEP CONTROL OF YOUR RECORDS','Archive','Review archived records and restore them when needed.']};
+const titles={accounts:['YOUR CAMPUS COMMUNITY','Registered accounts','Every student enrolled in your campus, with automatic updates every five seconds.'],overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your student records and privacy priorities.'],students:['ORGANIZED. ACCESSIBLE. PROTECTED.','Student directory','Manage student information with clear access and privacy controls.'],privacy:['PRIVACY BY DESIGN','Privacy center','Review consent, retention dates, and the protections behind your records.'],audit:['AN ACCOUNTABLE WORKSPACE','Activity log','Follow record changes, exports, and access events in your workspace.'],archive:['KEEP CONTROL OF YOUR RECORDS','Archive','Review archived records and restore them when needed.']};
 let state={user:null,csrf:'',page:'overview',rows:[],archived:[],events:[],overview:null,filter:'',department:'',status:'',tablePage:1,editId:null,archiveId:null,importRows:[],demo:false};
-let toastTimer,loadVersion=0,authMode='institution';
+let toastTimer,liveTimer,liveBusy=false,loadVersion=0,authMode='institution';
+state.accounts=[];state.campusCode=null;state.accountFilter='';state.accountRole='';state.samplePreview=false;
 function setAuthMode(mode){
  authMode=mode; $('#login-error').textContent=''; $('#login-success').textContent=''; $('#login-success').hidden=true;
  const form=$('#login-form'),signup=mode==='demo-signup';
@@ -25,7 +26,7 @@ function setAuthMode(mode){
  updateSignupRole();
  document.querySelectorAll('[data-auth-mode]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.authMode===mode)));
 }
-function updateSignupRole(){const role=$('#login-form').elements.role.value||'student';$('#signup-role-help').textContent=roleHelp[role];if(authMode==='demo-signup')$('#auth-submit').textContent='Create '+signupRoles[role]+' account';}
+function updateSignupRole(){const role=$('#login-form').elements.role.value||'student';$('#campus-code-field').hidden=role!=='student';$('#login-form').elements.campus_code.disabled=authMode!=='demo-signup'||role!=='student';$('#signup-role-help').textContent=roleHelp[role];if(authMode==='demo-signup')$('#auth-submit').textContent='Create '+signupRoles[role]+' account';}
 $('#login-form').addEventListener('change',event=>{if(event.target.name==='role')updateSignupRole();});
 $('#show-password').addEventListener('change',event=>{const type=event.target.checked?'text':'password';$('#login-form').elements.password.type=type;$('#login-form').elements.confirm_password.type=type;});
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.hidden=false;el.classList.toggle('failure',error);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,4500);}
@@ -38,36 +39,59 @@ async function api(path,options={}){
  if(!response.ok){if(response.status===401&&state.user){state.user=null;showLogin();}throw Error(data.error||'Request failed');}
  return data;
 }
-function showLogin(){ $('#loading').hidden=true;$('#workspace').hidden=true;$('#login-screen').hidden=false;document.querySelectorAll('dialog[open]').forEach(d=>d.close());}
+function showLogin(){clearInterval(liveTimer);++loadVersion;$('#live-status').textContent='Signed out'; $('#loading').hidden=true;$('#workspace').hidden=true;$('#login-screen').hidden=false;document.querySelectorAll('dialog[open]').forEach(d=>d.close());}
 async function enterWorkspace(){
- const session=await api('/api/session'); Object.assign(state,{user:session.user,csrf:session.csrf,demo:session.demo,storage:session.storage});
+ const session=await api('/api/session'); Object.assign(state,{user:session.user,csrf:session.csrf,demo:session.demo,storage:session.storage,canJoin:session.campus_enrollment});
  $('#demo-entry').hidden=!session.demo_available;
  $('#auth-modes').hidden=!session.demo_available;
  $('#institution-mode').hidden=!session.institution_login;
  $('#auth-help').hidden=!session.demo_available;
  setAuthMode(session.demo_available&&!session.institution_login?'demo-login':'institution');
  if(!session.user){showLogin();return;}
+ state.accounts=[];state.campusCode=null;state.accountFilter='';state.accountRole='';$('#accounts-count').textContent='';$('#page-body').innerHTML='<div class="page-loading">Loading workspace…</div>';
  $('#loading').hidden=true;$('#login-screen').hidden=true;$('#workspace').hidden=false;
  $('#welcome-strip').textContent=(state.user.name?'Welcome, '+state.user.name+'. ':'Welcome. ')+roles[state.user.role]+' workspace — '+roleHelp[state.user.role];
  $('#account-role').textContent=roles[state.user.role];$('#account-email').textContent=state.user.email;$('#account-avatar').textContent=state.user.role.slice(0,1).toUpperCase();
  $('#demo-banner').hidden=!state.demo;$('#demo-notice').hidden=!state.demo;$('#workspace-type').textContent=state.demo?'Temporary sample workspace':'Institution workspace';
  document.querySelectorAll('.admin-only').forEach(el=>el.hidden=state.user.role!=='admin');
  state.page='overview';state.filter='';state.department='';state.status='';state.tablePage=1;
- await refresh();
+ await refresh();startLiveUpdates();
 }
-async function refresh(){
- const version=++loadVersion;
- const [records,overview]=await Promise.all([api('/api/students'),api('/api/overview')]);
- if(version!==loadVersion)return;
- state.rows=records.students;state.overview=overview;
- if(state.page==='archive')state.archived=(await api('/api/students?archived=true')).students;
- if(state.page==='audit')state.events=(await api('/api/audit')).events;
- $('#nav-count').textContent=state.rows.length;
- $('#last-sync').textContent='Updated '+new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit'}).format(new Date());
- render();
+async function refresh(live=false){
+ const version=++loadVersion,page=state.page;
+ if(page==='accounts'){
+  const result=await api('/api/accounts');if(version!==loadVersion||page!==state.page)return;
+  state.accounts=result.accounts;state.campusCode=result.campus_code;state.samplePreview=result.sample_preview;
+  $('#accounts-count').textContent=state.accounts.filter(a=>a.role==='student').length;
+  if(!live||!$('#accounts-table'))render();else{renderAccountsTable();renderAccountMetrics();}
+ }else{
+  const [records,overview]=await Promise.all([api('/api/students'),api('/api/overview')]);
+  if(version!==loadVersion||page!==state.page)return;
+  const before=JSON.stringify([state.rows,state.overview]);
+  state.rows=records.students;state.overview=overview;
+  if(page==='archive')state.archived=(await api('/api/students?archived=true')).students;
+  if(page==='audit')state.events=(await api('/api/audit')).events;
+  if(version!==loadVersion||page!==state.page)return;
+  $('#nav-count').textContent=state.rows.length;
+  if(!live||before!==JSON.stringify([state.rows,state.overview])||['archive','audit'].includes(page)){
+   const focused=document.activeElement,id=focused?.id,selection=focused?.selectionStart;
+   render();const replacement=id&&document.getElementById(id);
+   if(live&&replacement){replacement.focus();if(typeof selection==='number')replacement.setSelectionRange?.(selection,selection);}
+  }
+ }
+ $('#last-sync').textContent='Updated '+new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
+ $('#live-status').textContent='Live · updates every 5s';$('#live-status').classList.remove('offline');if($('#accounts-live-badge')){$('#accounts-live-badge').textContent='Live · 5s';$('#accounts-live-badge').className='badge green';}
 }
+async function liveTick(){
+ if(liveBusy||!state.user||document.hidden||document.querySelector('dialog[open]'))return;
+ liveBusy=true;
+ try{await refresh(true);}catch(e){if(state.user){$('#live-status').textContent='Connection lost · retrying';$('#live-status').classList.add('offline');if($('#accounts-live-badge')){$('#accounts-live-badge').textContent='Reconnecting';$('#accounts-live-badge').className='badge amber';}}}
+ finally{liveBusy=false;}
+}
+function startLiveUpdates(){clearInterval(liveTimer);liveTimer=setInterval(liveTick,5000);}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveTick();});
 async function navigate(page){
- if(!titles[page]||(['audit','archive'].includes(page)&&state.user.role!=='admin'))return;
+ if(!titles[page]||(['accounts','audit','archive'].includes(page)&&state.user.role!=='admin'))return;
  state.page=page;state.filter='';state.department='';state.status='';state.tablePage=1;
  $('#sidebar').classList.remove('open');$('#menu-toggle').setAttribute('aria-expanded','false');renderHeading();$('#page-body').innerHTML='<div class="page-loading">Loading workspace…</div>';
  try{await refresh();}catch(e){$('#page-body').innerHTML=`<div class="empty"><h3>Unable to load this view</h3><p>${esc(e.message)}</p><button class="btn" data-action="refresh">Try again</button></div>`;}
@@ -77,25 +101,41 @@ function renderHeading(){
  document.querySelectorAll('[data-page]').forEach(el=>{el.classList.toggle('active',el.dataset.page===state.page);if(el.dataset.page===state.page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
  let actions='';
  if(['overview','students'].includes(state.page)){
+  if(state.user.role==='student'&&state.canJoin&&!state.user.campus_member)actions+=`<button class="btn primary" data-action="join-campus">${icon('users')}Join Admin campus</button>`;
   if(state.user.role==='admin')actions+=`<button class="btn" data-action="export">${icon('download')}Export</button>`;
   if(state.user.role!=='student')actions+=`<button class="btn primary" data-action="add">${icon('plus')}Add student</button>`;
  }else actions=`<button class="btn" data-action="refresh">${icon('clock')}Refresh</button>`;
  $('#page-actions').innerHTML=actions;
 }
-function render(){renderHeading();if(state.page==='overview')renderOverview();if(['students','archive'].includes(state.page))renderDirectory();if(state.page==='privacy')renderPrivacy();if(state.page==='audit')renderAudit();}
+function render(){renderHeading();if(state.page==='overview')renderOverview();if(['students','archive'].includes(state.page))renderDirectory();if(state.page==='privacy')renderPrivacy();if(state.page==='audit')renderAudit();if(state.page==='accounts')renderAccounts();}
+function dateLabel(value){return value?new Date(value).toLocaleString():'Not recorded';}
+function renderAccountMetrics(){
+ const students=state.accounts.filter(a=>a.role==='student'),online=students.filter(a=>a.presence==='Online');
+ $('#account-metrics').innerHTML=metric('Registered students',students.length,'Students enrolled in your campus','users','highlight')+metric('Online now',online.length,'Active within the last 20 seconds','check')+metric('Total accounts',state.accounts.length,'Includes the campus administrator','shield')+metric('Auto update','5 sec','No page refresh needed','clock');
+}
+function renderAccounts(){
+ const invite=state.campusCode?`<div class="campus-invite"><div><h2>Invite students to your campus</h2><p>Students choose Create account → Student and enter this code. Their accounts and records appear here automatically.</p></div><div class="campus-code-wrap"><code id="campus-code">${esc(state.campusCode)}</code><button class="btn primary" data-action="copy-campus">Copy code</button></div></div>`:`<div class="notice-card">${state.samplePreview?'Create an Admin account and sign in to get a campus code and monitor student registrations. This preview does not expose other accounts.':'Your institution provisions accounts through its administrator.'}</div>`;
+ $('#page-body').innerHTML=`${invite}<section id="account-metrics" class="metrics" aria-label="Account statistics"></section><section class="panel"><div class="toolbar"><div class="search-wrap">${icon('search')}<input id="accounts-search" aria-label="Search registered accounts" placeholder="Search name or email…" value="${esc(state.accountFilter)}"></div><select id="accounts-role-filter" aria-label="Filter accounts by role"><option value="">All roles</option>${['student','admin','staff'].map(r=>`<option value="${r}" ${state.accountRole===r?'selected':''}>${esc(roles[r])}</option>`).join('')}</select><span id="accounts-live-badge" class="badge green">Live · 5s</span></div><div id="accounts-table"></div><div class="panel-foot">${icon('lock')}Only your campus Admin can view this directory. Online indicates recent activity; Idle indicates an open session without recent activity.</div></section>`;
+ renderAccountMetrics();renderAccountsTable();
+}
+function renderAccountsTable(){
+ const query=state.accountFilter.toLowerCase();
+ const rows=state.accounts.filter(a=>(!state.accountRole||a.role===state.accountRole)&&[a.name,a.email].some(v=>v.toLowerCase().includes(query)));
+ $('#accounts-table').innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Account</th><th>Role</th><th>Presence</th><th>Student ID</th><th>Registered</th><th>Last active</th></tr></thead><tbody>${rows.map(a=>`<tr><td><div class="student-name">${esc(a.name)}</div><div class="email-small">${esc(a.email)}</div></td><td><span class="badge">${esc(roles[a.role]||a.role)}</span></td><td><span class="presence ${a.presence.toLowerCase()}"><span class="status-dot"></span>${esc(a.presence)}</span></td><td>${esc(a.student_id||'—')}</td><td>${esc(dateLabel(a.created_at))}</td><td>${esc(dateLabel(a.last_seen))}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty">${icon('users')}<h3>No matching accounts</h3><p>Students appear automatically after signing up with your campus code.</p></div>`;
+}
 function metric(label,value,note,type,highlight='') {return `<article class="metric ${highlight}"><div class="metric-head"><span>${label}</span><span class="metric-icon">${icon(type)}</span></div><div class="metric-value">${esc(value)}</div><div class="metric-foot">${icon(highlight==='warning'?'info':'check')}<span>${esc(note)}</span></div></article>`;}
 function renderOverview(){
  const o=state.overview,pct=o.total?Math.round(o.consent/o.total*100):0;
  const max=Math.max(1,...o.departments.map(d=>d.count));
  const chart=o.departments.map((d,i)=>{const x=34+i*95,h=d.count/max*130;return `<rect class="bar ${i===0?'primary':''}" x="${x}" y="${155-h}" width="49" height="${h}" rx="5"/><text x="${x+24.5}" y="${145-h}" text-anchor="middle">${d.count}</text>`;}).join('');
- $('#page-body').innerHTML=`<section class="metrics" aria-label="Workspace statistics">${metric('Student records',o.total,'In the active directory','users','highlight')}${metric('Consent captured',o.consent,`${pct}% of active records`,'shield')}${metric('Average CGPA',o.average_cgpa.toFixed(2),'Across visible students · out of 10','grid')}${metric('Needs review',o.review_count,'Consent or retention follow-up','info',o.review_count?'warning':'')}</section>
- <div class="overview-grid"><section class="panel"><div class="panel-head"><div><h2>Students by department</h2><p>Distribution of your active directory</p></div><span class="badge">${o.total} students</span></div><div class="panel-body"><svg class="chart" viewBox="0 0 500 175" role="img" aria-label="${esc(o.departments.map(d=>`${d.name}: ${d.count}`).join(', '))}"><path class="gridline" d="M10 30h480M10 90h480M10 155h480"/>${chart}</svg><div class="chart-labels"><span>Computer<br>Science</span><span>Electronics</span><span>Mechanical</span><span>Civil</span><span>Business</span></div><div class="chart-key"><span class="key-dot"></span>Active student records</div></div></section>
+ $('#page-body').innerHTML=`<section class="metrics" aria-label="Workspace statistics">${metric('Student records',o.total,'In the active directory','users','highlight')}${metric('Consent captured',o.consent,`${pct}% of active records`,'shield')}${metric('Average CGPA',o.graded_count===0?'—':o.average_cgpa.toFixed(2),'Reviewed academic records · out of 10','grid')}${metric('Needs review',o.review_count,'Consent or retention follow-up','info',o.review_count?'warning':'')}</section>
+ <div class="overview-grid"><section class="panel"><div class="panel-head"><div><h2>Students by department</h2><p>Distribution of reviewed academic records</p></div><span class="badge">${o.total} students</span></div><div class="panel-body"><svg class="chart" viewBox="0 0 500 175" role="img" aria-label="${esc(o.departments.map(d=>`${d.name}: ${d.count}`).join(', '))}"><path class="gridline" d="M10 30h480M10 90h480M10 155h480"/>${chart}</svg><div class="chart-labels"><span>Computer<br>Science</span><span>Electronics</span><span>Mechanical</span><span>Civil</span><span>Business</span></div><div class="chart-key"><span class="key-dot"></span>Active student records</div></div></section>
  <section class="panel"><div class="panel-head"><div><h2>Privacy status</h2><p>Small checks. Meaningful protection.</p></div>${icon('shield')}</div><div class="panel-body"><div class="protection-progress"><div class="score-ring"><svg viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="33"/><circle class="score-value" cx="40" cy="40" r="33" stroke-dasharray="${207.35*pct/100} 207.35"/></svg><strong>${pct}%</strong></div><div><h3>Consent coverage</h3><p>${o.consent} of ${o.total} students have recorded consent</p></div></div><div class="check-list"><div class="check-item"><span class="check-icon">${icon('check')}</span>Stored record encryption<span class="badge green">Enabled</span></div><div class="check-item"><span class="check-icon">${icon('check')}</span>Role-based permissions<span class="badge green">Enforced</span></div><div class="check-item ${o.review_count?'warning':''}"><span class="check-icon">${icon(o.review_count?'info':'check')}</span>Consent & retention<span class="badge ${o.review_count?'amber':'green'}">${o.review_count?'Review '+o.review_count:'Up to date'}</span></div></div></div><div class="panel-foot">${icon('arrow')}<button class="text-btn" data-action="privacy">Open privacy center</button></div></section></div>
  <section class="panel"><div class="panel-head"><div><h2>${state.user.role==='student'?'Your student record':'Recently updated students'}</h2><p>Student information available to your role</p></div><button class="text-btn" data-action="directory">View directory ${icon('arrow')}</button></div><div class="table-wrap">${studentTable([...state.rows].sort((a,b)=>b.updated_at.localeCompare(a.updated_at)).slice(0,5),false)}</div><div class="panel-foot">${icon('lock')}Student emails are masked for staff. Students can only view their own records.</div></section>`;
 }
 function studentTable(rows,actions=true){
  if(!rows.length)return `<div class="empty">${icon('users')}<h3>No student records here</h3><p>${state.user.role==='student'?'Your administrator can link a record to your account email.':'Add a student or adjust your filters to get started.'}</p></div>`;
- return `<table><thead><tr><th>Student</th><th>Department</th><th>Year</th><th>CGPA</th><th>Status</th><th>Privacy</th>${actions&&state.user.role!=='student'?'<th>Actions</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td><div class="student-cell"><span class="student-avatar">${esc(r.name.split(/\s+/).map(n=>n[0]).slice(0,2).join(''))}</span><div><div class="student-name">${esc(r.name)}</div><div class="student-id">${esc(r.student_id)}</div>${actions?`<div class="email-small">${esc(r.email)}</div>`:''}</div></div></td><td>${esc(r.department)}</td><td>Year ${r.year}</td><td class="cgpa">${r.cgpa.toFixed(2)}</td><td><span class="table-status ${r.status!=='Active'?'neutral':''}"><span class="status-dot"></span>${esc(r.status)}</span></td><td><span class="badge ${r.issues.length?'amber':'green'}">${r.issues.length?'Needs review':'Up to date'}</span></td>${actions&&state.user.role!=='student'?`<td><div class="table-actions">${state.page==='archive'?`<button data-action="restore" data-id="${esc(r.student_id)}">Restore</button>`:`<button data-action="edit" data-id="${esc(r.student_id)}">Edit</button>${state.user.role==='admin'?`<button class="archive-action" data-action="archive" data-id="${esc(r.student_id)}">Archive</button>`:''}`}</div></td>`:''}</tr>`).join('')}</tbody></table>`;
+ return `<table><thead><tr><th>Student</th><th>Department</th><th>Year</th><th>CGPA</th><th>Status</th><th>Privacy</th>${actions&&state.user.role!=='student'?'<th>Actions</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td><div class="student-cell"><span class="student-avatar">${esc(r.name.split(/\s+/).map(n=>n[0]).slice(0,2).join(''))}</span><div><div class="student-name">${esc(r.name)}</div><div class="student-id">${esc(r.student_id)}</div>${actions?`<div class="email-small">${esc(r.email)}</div>`:''}</div></div></td><td>${r.academic_pending?'Pending review':esc(r.department)}</td><td>${r.academic_pending?'—':'Year '+r.year}</td><td class="cgpa">${r.academic_pending?'—':r.cgpa.toFixed(2)}</td><td><span class="table-status ${r.status!=='Active'?'neutral':''}"><span class="status-dot"></span>${esc(r.status)}</span></td><td><span class="badge ${r.issues.length?'amber':'green'}">${r.issues.length?'Needs review':'Up to date'}</span></td>${actions&&state.user.role!=='student'?`<td><div class="table-actions">${state.page==='archive'?`<button data-action="restore" data-id="${esc(r.student_id)}">Restore</button>`:`<button data-action="edit" data-id="${esc(r.student_id)}">Edit</button>${state.user.role==='admin'?`<button class="archive-action" data-action="archive" data-id="${esc(r.student_id)}">Archive</button>`:''}`}</div></td>`:''}</tr>`).join('')}</tbody></table>`;
 }
 function filteredRows(){const source=state.page==='archive'?state.archived:state.rows;const query=state.filter.toLowerCase();return source.filter(r=>(!query||[r.name,r.student_id,r.email].some(s=>s.toLowerCase().includes(query)))&&(!state.department||r.department===state.department)&&(!state.status||r.status===state.status));}
 function renderDirectory(){
@@ -144,6 +184,7 @@ document.addEventListener('click',async event=>{
  const demo=event.target.closest('[data-demo]');if(demo){$('#login-error').textContent='';await busy(demo,async()=>{try{await api('/api/demo',{method:'POST',body:JSON.stringify({role:demo.dataset.demo})});await enterWorkspace();}catch(e){$('#login-error').textContent=e.message;}});return;}
  const button=event.target.closest('[data-action]');if(!button)return;const {action,id}=button.dataset;
  try{
+  if(action==='join-campus'){$('#join-campus-form').reset();$('#join-campus-error').textContent='';$('#join-campus-dialog').showModal();}
   if(action==='add')openRecord();
   if(action==='edit')openRecord(id);
   if(action==='archive'){state.archiveId=id;$('#confirm-error').textContent='';$('#confirm-dialog').showModal();}
@@ -151,13 +192,15 @@ document.addEventListener('click',async event=>{
   if(action==='export'){$('#export-masked').checked=true;$('#export-error').textContent='';$('#export-dialog').showModal();}
   if(action==='import'){state.importRows=[];$('#csv-file').value='';$('#import-error').textContent='';$('#import-preview').innerHTML='';$('#confirm-import').disabled=true;$('#import-dialog').showModal();}
   if(action==='directory')await navigate('students');if(action==='privacy')await navigate('privacy');
-  if(action==='refresh')await busy(button,refresh);
+  if(action==='refresh')await busy(button,()=>refresh());
+  if(action==='copy-campus'){try{await navigator.clipboard.writeText(state.campusCode);toast('Campus code copied. Share it with your students.');}catch(e){toast('Select the campus code and copy it.');}}
   if(action==='previous'){state.tablePage--;renderDirectoryTable();}if(action==='next'){state.tablePage++;renderDirectoryTable();}
  }catch(e){toast(e.message,true);}
 });
-document.addEventListener('input',event=>{if(event.target.id==='directory-search'){state.filter=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='audit-search')renderAuditTable(event.target.value);});
-document.addEventListener('change',event=>{if(event.target.id==='department-filter'){state.department=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='status-filter'){state.status=event.target.value;state.tablePage=1;renderDirectoryTable();}});
+document.addEventListener('input',event=>{if(event.target.id==='accounts-search'){state.accountFilter=event.target.value;renderAccountsTable();}if(event.target.id==='directory-search'){state.filter=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='audit-search')renderAuditTable(event.target.value);});
+document.addEventListener('change',event=>{if(event.target.id==='accounts-role-filter'){state.accountRole=event.target.value;renderAccountsTable();}if(event.target.id==='department-filter'){state.department=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='status-filter'){state.status=event.target.value;state.tablePage=1;renderDirectoryTable();}});
 $('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';$('#login-success').hidden=true;await busy(form.querySelector('[type=submit]'),async()=>{try{const mode=authMode;if(mode==='demo-signup'&&form.elements.password.value!==form.elements.confirm_password.value)throw Error('Passwords do not match');const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-success').textContent=result.message;$('#login-success').hidden=false;toast(signupRoles[result.role]+' account created successfully.');form.elements.password.focus();}else{form.reset();await enterWorkspace();toast('Signed in successfully as '+roles[state.user.role]+'.');}}catch(e){$('#login-error').textContent=e.message;}});});
+$('#join-campus-form').addEventListener('submit',async event=>{event.preventDefault();$('#join-campus-error').textContent='';await busy(event.target.querySelector('[type=submit]'),async()=>{try{const result=await api('/api/campus/join',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});$('#join-campus-dialog').close();await enterWorkspace();toast(result.message);}catch(e){$('#join-campus-error').textContent=e.message;}});});
 $('#record-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#record-error').textContent='';await busy(form.querySelector('[type=submit]'),async()=>{try{const data=Object.fromEntries(new FormData(form));data.consent=form.elements.consent.checked;data.cgpa=Number(data.cgpa);data.year=Number(data.year);if(state.editId&&state.user.role==='staff')data.email=state.rows.find(r=>r.student_id===state.editId).email;await api('/api/students'+(state.editId?'/'+encodeURIComponent(state.editId):''),{method:state.editId?'PUT':'POST',body:JSON.stringify(data)});$('#record-dialog').close();await refresh();toast(state.editId?'Student updated':'Student added');}catch(e){$('#record-error').textContent=e.message;}});});
 $('#confirm-archive').addEventListener('click',async event=>busy(event.target,async()=>{try{await api('/api/students/'+encodeURIComponent(state.archiveId),{method:'DELETE'});$('#confirm-dialog').close();await refresh();toast('Record archived. You can restore it anytime.');}catch(e){$('#confirm-error').textContent=e.message;}}));
 $('#signout').addEventListener('click',async event=>busy(event.currentTarget,async()=>{try{await api('/api/logout',{method:'POST',body:'{}'});state.user=null;await enterWorkspace();toast('You have signed out');}catch(e){toast(e.message,true);}}));

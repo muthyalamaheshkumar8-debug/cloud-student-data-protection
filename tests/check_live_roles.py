@@ -4,7 +4,7 @@ import sys
 import requests
 
 base=sys.argv[1].rstrip('/')
-assert requests.get(base+'/api/health',timeout=30).json()['version']=='2.1.0'
+assert requests.get(base+'/api/health',timeout=30).json()['version']=='2.2.0'
 for role in ['student','staff','admin']:
     client=requests.Session()
     csrf=client.get(base+'/api/session',timeout=30).json()['csrf']
@@ -27,4 +27,4 @@ for role in ['student','staff','admin']:
     assert client.get(base+'/api/export',timeout=30).status_code==(200 if role=='admin' else 403)
     assert post('/api/logout',{}).ok
     print(role.title()+': signup success, saved role, visibility, export/audit permissions, and logout verified.')
-print('Live CampusGuard 2.1.0 role checks passed.')
+print('Live CampusGuard 2.2.0 role checks passed.')
