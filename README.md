@@ -10,7 +10,7 @@ Choose **Create account**, select **Student**, **Staff**, or **Admin**, then **S
 
 ## Screenshots
 
-These screenshots show an earlier interface using fictional sample data. The live app now includes campus enrollment and the Registered accounts view.
+These screenshots show an earlier interface using fictional sample data. The live app now has mandatory Student and Staff campus codes and a live account directory.
 
 | Create account | Sign in |
 | --- | --- |
@@ -34,12 +34,12 @@ These screenshots show an earlier interface using fictional sample data. The liv
 
 [![Open the project walkthrough](campusguard-dashboard.jpg)](campusguard-walkthrough.mp4)
 
-This repository video shows an earlier interface. Use the live project to explore the latest signup, campus enrollment, and account directory.
+This repository video shows an earlier interface. Use the live project to explore the latest role-specific campus invitations and account visibility.
 
 ## Features
 
 - Admin-only **Registered accounts** with names, emails, saved roles, registration times, linked student IDs, and Online / Idle / Offline presence.
-- Shared campus enrollment: an Admin signs in and copies their campus code; students enter it during signup or choose **Join Admin campus** from an existing Student account.
+- Separate **Student** and **Staff** campus codes appear immediately after Admin signup, each with its own Copy button. Codes remain available under **Registered accounts** after sign-in.
 - Automatic updates every five seconds, preserved search filters, reconnect status, and paused updates while editing a record.
 - Student enrollment is bound to an account ID. Students can only view their own enrolled record; other Admin campuses and private workspaces remain separate.
 - New enrollment profiles await Admin review. Pending grades and academic fields are displayed and exported as blank, and excluded from CGPA averages.
@@ -47,7 +47,7 @@ This repository video shows an earlier interface. Use the live project to explor
 - Professional navy and blue interface with consistent contrast, buttons, and role cards.
 - Student, Staff, and Admin account signup with saved roles and role-specific success messages.
 - Full name, password confirmation, password visibility, and personalized sign-in welcome.
-- Student signup links a fictional record to the account email; staff emails are masked; admin tools include export, archive, restore, and activity logs.
+- Student signup requires the Student campus code and links a record to the account ID. Staff signup requires the Staff code, preserves email masking, and cannot export, archive, or view account/activity logs.
 
 - Dashboard with student totals, department distribution, consent coverage, average CGPA, and privacy follow-up.
 - Searchable directory with department/status filters and pagination.
@@ -67,20 +67,21 @@ Privacy flags help an administrator review records. They do not establish legal 
 
 ## Admin visibility and live enrollment
 
-1. Create an **Admin** account and sign in.
-2. Open **Registered accounts** and choose **Copy code**.
-3. Give that campus code to your students. New students choose **Student** at signup and paste the code. Existing Student accounts choose **Join Admin campus** after signing in.
-4. Keep Registered accounts open. New registrations, online status, and changes update automatically every **5 seconds**. The student directory and overview also update automatically.
+1. Create an **Admin** account. The success panel immediately shows two different codes: **Student campus code** (`CG-STU-…`) and **Staff campus code** (`CG-STF-…`). Each has its own Copy button.
+2. Share the Student code with students and the Staff code with staff. A Staff code grants record-management access, so share it only with authorized staff.
+3. New accounts choose **Student** or **Staff**, enter the matching **required** campus code, and finish signup. The wrong role's code, a missing code, or an expired code is rejected before the account is created. Admin signup requires no code and creates its own campus.
+4. The Admin signs in and opens **Registered accounts** to copy either code again and view all enrolled Student and Staff accounts. New registrations appear automatically within **5 seconds**, even before the new user signs in. The student directory and overview update too.
+5. Existing personal Student or Staff accounts created in earlier versions can choose **Join Admin campus** after signing in, using their role's code. Existing Student codes from version 2.2 keep working; migration adds a separate Staff code.
 
-The Admin sees all students enrolled in that campus, including students who have registered but have not signed in yet. Passwords and password hashes are never sent to the directory. Online means authenticated activity within 20 seconds; Idle means a still-valid session without recent activity; signing out shows Offline. Updates pause in hidden tabs and while a record dialog is open.
+Passwords and password hashes are never sent to the directory. Online means authenticated activity within 20 seconds; Idle means a still-valid session without recent activity; signing out shows Offline. Updates pause in hidden tabs and while a record dialog is open. Search remains intact during updates.
 
-Self-selected Staff or Admin roles do not grant access to another Admin's campus. Campus codes allow Student enrollment only. Public sample previews never list real signup accounts. Firebase institution-account listing is not implemented by this sample portal; Firebase provisioning remains separate.
+A Student code cannot grant Staff or Admin access, and a Staff code cannot create a Student account. Admin signup cannot join someone else's campus. Staff can manage records with masked emails, but cannot list registered accounts, export, archive, or view activity logs. Other Admin campuses remain separate. Public previews never list signup accounts or expose working campus invitation codes. Firebase institutional provisioning remains separate from this temporary signup portal.
 
 Campus enrollments are part of the temporary hosted portal. They expire no later than their Admin's 24-hour workspace expiry, and free-host redeploys/restarts can clear them. Use persistent storage and verified institutional provisioning before storing real student records.
 
 ## Account signup and sign-in
 
-On the hosted project, choose **Create account**, enter your full name, select Student / Staff / Admin, and enter your email with a confirmed password reserved for this sample workspace, then choose **Sign in**. Passwords are salted and hashed; accounts without a campus code own a separate fictional workspace; enrolled Student accounts share their Admin campus while retaining access to their own record only. Signup accounts cannot access institution records. Signing out and back in preserves that workspace until its 24-hour expiry or a host restart/redeploy. This is a temporary demonstration, without email ownership verification; do not enter real student data. Student is the default role. The selected role is read from the saved account on every request and cannot be changed by submitting a different role at login. All self-created accounts remain separate from institutional data; campus Admins can see only students who explicitly join their campus. Existing temporary accounts retain their former Admin role through a database migration. Institution accounts remain administrator-provisioned.
+Choose **Create account**, enter your full name, select Student / Staff / Admin, enter the role-specific campus code for Student or Staff, and enter your email with a confirmed password reserved for this sample portal. Admin signup displays both codes immediately; then choose **Sign in**. The saved role controls every request and cannot be upgraded by changing the login payload. Students view their own account-linked record; staff view and manage campus records with masked emails; Admins view enrolled accounts and administration tools. Passwords are salted and hashed. Signup accounts cannot access institution records. The portal has no email ownership verification and uses temporary data: accounts expire after 24 hours or the Admin's earlier campus expiry, and host restarts/redeploys may clear them. Do not enter real student data. Institutional accounts remain administrator-provisioned.
 
 ## Quick start
 
@@ -179,7 +180,7 @@ python tests/run_ui_checks.py campus_live.cjs
 
 The security/integration suite covers authentication, CSRF, account privilege restrictions, per-session demo isolation, staff masking, student ownership, validation, CSV atomicity, formula protection, encryption at rest, archive/restore, activity logging, revocation, live role changes, request throttling, and disabling demo access.
 
-The additional interface check exercises the real Gunicorn API through a simulated DOM (jsdom): demo sign-in, search, pagination, add/edit, archive/restore, privacy, activity, sign-out, staff masking, student restrictions, and quoted CSV parsing. It does not replace visual browser testing. All 44 backend tests and the interface integration checks passed. Live API signup, login, visibility, and admin-only permissions were verified for all three account roles. The deployed desktop interface was visually checked in a browser; updated screenshots are included in the downloadable project package; repository images above show an earlier interface. Mobile rendering has not been separately verified. Verify campus enrollment with `python tests/check_live_campus.py https://campusguard-student-protection.onrender.com` (four temporary fictional accounts). Re-run the live role checks using `python tests/check_live_roles.py https://campusguard-student-protection.onrender.com` (this creates three isolated temporary sample accounts).
+The additional interface check exercises the real Gunicorn API through a simulated DOM (jsdom): demo sign-in, search, pagination, add/edit, archive/restore, privacy, activity, sign-out, staff masking, student restrictions, and quoted CSV parsing. It does not replace visual browser testing. All 48 backend tests and the interface integration checks passed. Live verification covers immediate separate invitations, mandatory role-specific codes, registration visibility, presence, Staff masking, and Admin-only permissions. The deployed desktop interface was visually checked in a browser; the updated signup screenshots are included in the downloadable package; repository images above show an earlier interface. Mobile rendering has not been separately verified. Verify campus enrollment with `python tests/check_live_campus.py https://campusguard-student-protection.onrender.com` (four temporary fictional accounts). Re-run the live role checks using `python tests/check_live_roles.py https://campusguard-student-protection.onrender.com` (this runs the same four-account campus checks).
 
 ## API
 
@@ -193,7 +194,7 @@ All writes require the session's `X-CSRF-Token`, returned by `GET /api/session`.
 | `/api/demo` | POST | Isolated fictional sample preview |
 | `/api/demo/signup`, `/api/demo/login` | POST | Temporary account creation / password sign-in |
 | `/api/accounts` | GET | Admin-only campus account directory and campus code |
-| `/api/campus/join` | POST | Enroll an existing Student signup account |
+| `/api/campus/join` | POST | Enroll an existing Student or Staff signup account |
 | `/api/presence` | GET | Authenticated activity heartbeat |
 | `/api/students` | GET, POST | Directory / new student |
 | `/api/students/<id>` | GET, PUT, DELETE | Detail / edit / reversible archive |

@@ -5,14 +5,14 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const roles={admin:'Administrator',staff:'Staff member',student:'Student'};
 const signupRoles={student:'Student',staff:'Staff',admin:'Admin'};
 const roleHelp={student:'View your own student record and privacy status.',staff:'Add and edit students. Emails stay masked; export and archive are restricted.',admin:'Manage students, export data, archive records, and review activity.'};
-const titles={accounts:['YOUR CAMPUS COMMUNITY','Registered accounts','Every student enrolled in your campus, with automatic updates every five seconds.'],overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your student records and privacy priorities.'],students:['ORGANIZED. ACCESSIBLE. PROTECTED.','Student directory','Manage student information with clear access and privacy controls.'],privacy:['PRIVACY BY DESIGN','Privacy center','Review consent, retention dates, and the protections behind your records.'],audit:['AN ACCOUNTABLE WORKSPACE','Activity log','Follow record changes, exports, and access events in your workspace.'],archive:['KEEP CONTROL OF YOUR RECORDS','Archive','Review archived records and restore them when needed.']};
+const titles={accounts:['YOUR CAMPUS COMMUNITY','Registered accounts','Every Student and Staff account enrolled in your campus, with updates every five seconds.'],overview:['WORKSPACE AT A GLANCE','Overview','A clear view of your student records and privacy priorities.'],students:['ORGANIZED. ACCESSIBLE. PROTECTED.','Student directory','Manage student information with clear access and privacy controls.'],privacy:['PRIVACY BY DESIGN','Privacy center','Review consent, retention dates, and the protections behind your records.'],audit:['AN ACCOUNTABLE WORKSPACE','Activity log','Follow record changes, exports, and access events in your workspace.'],archive:['KEEP CONTROL OF YOUR RECORDS','Archive','Review archived records and restore them when needed.']};
 let state={user:null,csrf:'',page:'overview',rows:[],archived:[],events:[],overview:null,filter:'',department:'',status:'',tablePage:1,editId:null,archiveId:null,importRows:[],demo:false};
 let toastTimer,liveTimer,liveBusy=false,loadVersion=0,authMode='institution';
-state.accounts=[];state.campusCode=null;state.accountFilter='';state.accountRole='';state.samplePreview=false;
+state.accounts=[];state.campusCode=null;state.inviteCodes=null;state.accountFilter='';state.accountRole='';state.samplePreview=false;
 function setAuthMode(mode){
- authMode=mode; $('#login-error').textContent=''; $('#login-success').textContent=''; $('#login-success').hidden=true;
+ authMode=mode; $('#login-error').textContent=''; $('#login-success').textContent=''; $('#login-success').hidden=true;$('#signup-invites').hidden=true;$('#signup-invites').innerHTML='';
  const form=$('#login-form'),signup=mode==='demo-signup';
- form.elements.password.value='';form.elements.confirm_password.value='';
+ form.elements.password.value='';form.elements.confirm_password.value='';form.elements.campus_code.value='';
  form.elements.password.type='password';form.elements.confirm_password.type='password';$('#show-password').checked=false;
  $('#signup-fields').hidden=!signup;$('#confirm-password-field').hidden=!signup;
  $('#demo-entry').hidden=signup||$('#auth-modes').hidden;
@@ -26,7 +26,14 @@ function setAuthMode(mode){
  updateSignupRole();
  document.querySelectorAll('[data-auth-mode]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.authMode===mode)));
 }
-function updateSignupRole(){const role=$('#login-form').elements.role.value||'student';$('#campus-code-field').hidden=role!=='student';$('#login-form').elements.campus_code.disabled=authMode!=='demo-signup'||role!=='student';$('#signup-role-help').textContent=roleHelp[role];if(authMode==='demo-signup')$('#auth-submit').textContent='Create '+signupRoles[role]+' account';}
+function updateSignupRole(){
+ const form=$('#login-form'),role=form.elements.role.value||'student',enrollment=role!=='admin',signup=authMode==='demo-signup';
+ $('#campus-code-field').hidden=!enrollment;form.elements.campus_code.disabled=!signup||!enrollment;form.elements.campus_code.required=signup&&enrollment;
+ $('#campus-code-label').textContent=signupRoles[role]+' campus code';form.elements.campus_code.placeholder=role==='staff'?'CG-STF-…':'CG-STU-…';
+ $('#campus-code-help').textContent='Ask your Admin for the '+signupRoles[role]+' code. '+(role==='staff'?'This joins their campus with Staff record-management access.':'This joins their campus and links your Student record.')+' Your name, email, and activity status become visible to that Admin.';
+ $('#signup-role-help').textContent=roleHelp[role];
+ if(signup){$('#auth-submit').textContent='Create '+signupRoles[role]+' account';$('#login-description').textContent=enrollment?'Enter your Admin’s '+signupRoles[role]+' campus code to create your account.':'Create your Admin account to generate separate Student and Staff campus codes.';}
+}
 $('#login-form').addEventListener('change',event=>{if(event.target.name==='role')updateSignupRole();});
 $('#show-password').addEventListener('change',event=>{const type=event.target.checked?'text':'password';$('#login-form').elements.password.type=type;$('#login-form').elements.confirm_password.type=type;});
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.hidden=false;el.classList.toggle('failure',error);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,4500);}
@@ -48,7 +55,7 @@ async function enterWorkspace(){
  $('#auth-help').hidden=!session.demo_available;
  setAuthMode(session.demo_available&&!session.institution_login?'demo-login':'institution');
  if(!session.user){showLogin();return;}
- state.accounts=[];state.campusCode=null;state.accountFilter='';state.accountRole='';$('#accounts-count').textContent='';$('#page-body').innerHTML='<div class="page-loading">Loading workspace…</div>';
+ state.accounts=[];state.campusCode=null;state.inviteCodes=null;state.accountFilter='';state.accountRole='';$('#accounts-count').textContent='';$('#page-body').innerHTML='<div class="page-loading">Loading workspace…</div>';
  $('#loading').hidden=true;$('#login-screen').hidden=true;$('#workspace').hidden=false;
  $('#welcome-strip').textContent=(state.user.name?'Welcome, '+state.user.name+'. ':'Welcome. ')+roles[state.user.role]+' workspace — '+roleHelp[state.user.role];
  $('#account-role').textContent=roles[state.user.role];$('#account-email').textContent=state.user.email;$('#account-avatar').textContent=state.user.role.slice(0,1).toUpperCase();
@@ -61,8 +68,8 @@ async function refresh(live=false){
  const version=++loadVersion,page=state.page;
  if(page==='accounts'){
   const result=await api('/api/accounts');if(version!==loadVersion||page!==state.page)return;
-  state.accounts=result.accounts;state.campusCode=result.campus_code;state.samplePreview=result.sample_preview;
-  $('#accounts-count').textContent=state.accounts.filter(a=>a.role==='student').length;
+  state.accounts=result.accounts;state.campusCode=result.campus_code;state.inviteCodes=result.invite_codes;state.samplePreview=result.sample_preview;
+  $('#accounts-count').textContent=state.accounts.filter(a=>a.role!=='admin').length;
   if(!live||!$('#accounts-table'))render();else{renderAccountsTable();renderAccountMetrics();}
  }else{
   const [records,overview]=await Promise.all([api('/api/students'),api('/api/overview')]);
@@ -101,7 +108,7 @@ function renderHeading(){
  document.querySelectorAll('[data-page]').forEach(el=>{el.classList.toggle('active',el.dataset.page===state.page);if(el.dataset.page===state.page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
  let actions='';
  if(['overview','students'].includes(state.page)){
-  if(state.user.role==='student'&&state.canJoin&&!state.user.campus_member)actions+=`<button class="btn primary" data-action="join-campus">${icon('users')}Join Admin campus</button>`;
+  if(['student','staff'].includes(state.user.role)&&state.canJoin&&!state.user.campus_member)actions+=`<button class="btn primary" data-action="join-campus">${icon('users')}Join Admin campus</button>`;
   if(state.user.role==='admin')actions+=`<button class="btn" data-action="export">${icon('download')}Export</button>`;
   if(state.user.role!=='student')actions+=`<button class="btn primary" data-action="add">${icon('plus')}Add student</button>`;
  }else actions=`<button class="btn" data-action="refresh">${icon('clock')}Refresh</button>`;
@@ -110,18 +117,21 @@ function renderHeading(){
 function render(){renderHeading();if(state.page==='overview')renderOverview();if(['students','archive'].includes(state.page))renderDirectory();if(state.page==='privacy')renderPrivacy();if(state.page==='audit')renderAudit();if(state.page==='accounts')renderAccounts();}
 function dateLabel(value){return value?new Date(value).toLocaleString():'Not recorded';}
 function renderAccountMetrics(){
- const students=state.accounts.filter(a=>a.role==='student'),online=students.filter(a=>a.presence==='Online');
- $('#account-metrics').innerHTML=metric('Registered students',students.length,'Students enrolled in your campus','users','highlight')+metric('Online now',online.length,'Active within the last 20 seconds','check')+metric('Total accounts',state.accounts.length,'Includes the campus administrator','shield')+metric('Auto update','5 sec','No page refresh needed','clock');
+ const students=state.accounts.filter(a=>a.role==='student'),staff=state.accounts.filter(a=>a.role==='staff'),online=state.accounts.filter(a=>a.role!=='admin'&&a.presence==='Online');
+ $('#account-metrics').innerHTML=metric('Registered students',students.length,'Students enrolled in your campus','users','highlight')+metric('Registered staff',staff.length,'Staff enrolled in your campus','shield')+metric('Online now',online.length,'Students and staff active within 20 seconds','check')+metric('Auto update','5 sec','No page refresh needed','clock');
+}
+function inviteCards(codes,signup=false){
+ return `<div class="campus-invite"><div><h2>${signup?'Your campus codes are ready':'Invite Students and Staff'}</h2><p>Share each code with its matching role. Students use the Student code; staff use the Staff code.</p></div><div class="campus-invite-codes">${['student','staff'].map(role=>`<article class="invite-code-card"><h3>${signupRoles[role]} campus code</h3><p>${role==='student'?'Joins with access to their own record.':'Grants Staff access to manage campus records.'}</p><div class="campus-code-wrap"><code id="${signup?'signup-'+role+'-code':role==='student'?'campus-code':'staff-campus-code'}">${esc(codes[role])}</code><button type="button" class="btn primary" data-action="copy-campus" data-role="${role}">Copy ${signupRoles[role]} code</button></div></article>`).join('')}</div></div>`;
 }
 function renderAccounts(){
- const invite=state.campusCode?`<div class="campus-invite"><div><h2>Invite students to your campus</h2><p>Students choose Create account → Student and enter this code. Their accounts and records appear here automatically.</p></div><div class="campus-code-wrap"><code id="campus-code">${esc(state.campusCode)}</code><button class="btn primary" data-action="copy-campus">Copy code</button></div></div>`:`<div class="notice-card">${state.samplePreview?'Create an Admin account and sign in to get a campus code and monitor student registrations. This preview does not expose other accounts.':'Your institution provisions accounts through its administrator.'}</div>`;
+ const invite=state.inviteCodes?inviteCards(state.inviteCodes):`<div class="notice-card">${state.samplePreview?'Create an Admin account to get separate Student and Staff campus codes. Sign in to monitor registrations. This preview does not expose other accounts.':'Your institution provisions accounts through its administrator.'}</div>`;
  $('#page-body').innerHTML=`${invite}<section id="account-metrics" class="metrics" aria-label="Account statistics"></section><section class="panel"><div class="toolbar"><div class="search-wrap">${icon('search')}<input id="accounts-search" aria-label="Search registered accounts" placeholder="Search name or email…" value="${esc(state.accountFilter)}"></div><select id="accounts-role-filter" aria-label="Filter accounts by role"><option value="">All roles</option>${['student','admin','staff'].map(r=>`<option value="${r}" ${state.accountRole===r?'selected':''}>${esc(roles[r])}</option>`).join('')}</select><span id="accounts-live-badge" class="badge green">Live · 5s</span></div><div id="accounts-table"></div><div class="panel-foot">${icon('lock')}Only your campus Admin can view this directory. Online indicates recent activity; Idle indicates an open session without recent activity.</div></section>`;
  renderAccountMetrics();renderAccountsTable();
 }
 function renderAccountsTable(){
  const query=state.accountFilter.toLowerCase();
  const rows=state.accounts.filter(a=>(!state.accountRole||a.role===state.accountRole)&&[a.name,a.email].some(v=>v.toLowerCase().includes(query)));
- $('#accounts-table').innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Account</th><th>Role</th><th>Presence</th><th>Student ID</th><th>Registered</th><th>Last active</th></tr></thead><tbody>${rows.map(a=>`<tr><td><div class="student-name">${esc(a.name)}</div><div class="email-small">${esc(a.email)}</div></td><td><span class="badge">${esc(roles[a.role]||a.role)}</span></td><td><span class="presence ${a.presence.toLowerCase()}"><span class="status-dot"></span>${esc(a.presence)}</span></td><td>${esc(a.student_id||'—')}</td><td>${esc(dateLabel(a.created_at))}</td><td>${esc(dateLabel(a.last_seen))}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty">${icon('users')}<h3>No matching accounts</h3><p>Students appear automatically after signing up with your campus code.</p></div>`;
+ $('#accounts-table').innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Account</th><th>Role</th><th>Presence</th><th>Student ID</th><th>Registered</th><th>Last active</th></tr></thead><tbody>${rows.map(a=>`<tr><td><div class="student-name">${esc(a.name)}</div><div class="email-small">${esc(a.email)}</div></td><td><span class="badge">${esc(roles[a.role]||a.role)}</span></td><td><span class="presence ${a.presence.toLowerCase()}"><span class="status-dot"></span>${esc(a.presence)}</span></td><td>${esc(a.student_id||'—')}</td><td>${esc(dateLabel(a.created_at))}</td><td>${esc(dateLabel(a.last_seen))}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty">${icon('users')}<h3>No matching accounts</h3><p>Students and staff appear automatically after signing up with their matching campus code.</p></div>`;
 }
 function metric(label,value,note,type,highlight='') {return `<article class="metric ${highlight}"><div class="metric-head"><span>${label}</span><span class="metric-icon">${icon(type)}</span></div><div class="metric-value">${esc(value)}</div><div class="metric-foot">${icon(highlight==='warning'?'info':'check')}<span>${esc(note)}</span></div></article>`;}
 function renderOverview(){
@@ -184,7 +194,7 @@ document.addEventListener('click',async event=>{
  const demo=event.target.closest('[data-demo]');if(demo){$('#login-error').textContent='';await busy(demo,async()=>{try{await api('/api/demo',{method:'POST',body:JSON.stringify({role:demo.dataset.demo})});await enterWorkspace();}catch(e){$('#login-error').textContent=e.message;}});return;}
  const button=event.target.closest('[data-action]');if(!button)return;const {action,id}=button.dataset;
  try{
-  if(action==='join-campus'){$('#join-campus-form').reset();$('#join-campus-error').textContent='';$('#join-campus-dialog').showModal();}
+  if(action==='join-campus'){$('#join-campus-form').reset();$('#join-campus-error').textContent='';$('#join-code-label').textContent=signupRoles[state.user.role]+' campus code';$('#join-campus-form').elements.campus_code.placeholder=state.user.role==='staff'?'CG-STF-…':'CG-STU-…';$('#join-campus-help').textContent=state.user.role==='staff'?'Use the Staff code supplied by your Admin to manage their campus records. Your name, email, and recent activity become visible to that Admin.':'Use the Student code supplied by your Admin. Your name, email, and activity become visible to that Admin; academic details await review.';$('#join-campus-dialog').showModal();}
   if(action==='add')openRecord();
   if(action==='edit')openRecord(id);
   if(action==='archive'){state.archiveId=id;$('#confirm-error').textContent='';$('#confirm-dialog').showModal();}
@@ -193,13 +203,13 @@ document.addEventListener('click',async event=>{
   if(action==='import'){state.importRows=[];$('#csv-file').value='';$('#import-error').textContent='';$('#import-preview').innerHTML='';$('#confirm-import').disabled=true;$('#import-dialog').showModal();}
   if(action==='directory')await navigate('students');if(action==='privacy')await navigate('privacy');
   if(action==='refresh')await busy(button,()=>refresh());
-  if(action==='copy-campus'){try{await navigator.clipboard.writeText(state.campusCode);toast('Campus code copied. Share it with your students.');}catch(e){toast('Select the campus code and copy it.');}}
+  if(action==='copy-campus'){const code=button.closest('.invite-code-card').querySelector('code').textContent;try{await navigator.clipboard.writeText(code);toast(signupRoles[button.dataset.role]+' code copied.');}catch(e){toast('Select the '+signupRoles[button.dataset.role]+' code and copy it.');}}
   if(action==='previous'){state.tablePage--;renderDirectoryTable();}if(action==='next'){state.tablePage++;renderDirectoryTable();}
  }catch(e){toast(e.message,true);}
 });
 document.addEventListener('input',event=>{if(event.target.id==='accounts-search'){state.accountFilter=event.target.value;renderAccountsTable();}if(event.target.id==='directory-search'){state.filter=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='audit-search')renderAuditTable(event.target.value);});
 document.addEventListener('change',event=>{if(event.target.id==='accounts-role-filter'){state.accountRole=event.target.value;renderAccountsTable();}if(event.target.id==='department-filter'){state.department=event.target.value;state.tablePage=1;renderDirectoryTable();}if(event.target.id==='status-filter'){state.status=event.target.value;state.tablePage=1;renderDirectoryTable();}});
-$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';$('#login-success').hidden=true;await busy(form.querySelector('[type=submit]'),async()=>{try{const mode=authMode;if(mode==='demo-signup'&&form.elements.password.value!==form.elements.confirm_password.value)throw Error('Passwords do not match');const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-success').textContent=result.message;$('#login-success').hidden=false;toast(signupRoles[result.role]+' account created successfully.');form.elements.password.focus();}else{form.reset();await enterWorkspace();toast('Signed in successfully as '+roles[state.user.role]+'.');}}catch(e){$('#login-error').textContent=e.message;}});});
+$('#login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#login-error').textContent='';$('#login-success').hidden=true;await busy(form.querySelector('[type=submit]'),async()=>{try{const mode=authMode;if(mode==='demo-signup'&&form.elements.password.value!==form.elements.confirm_password.value)throw Error('Passwords do not match');if(mode==='demo-signup'&&form.elements.role.value!=='admin'&&!form.elements.campus_code.value.trim())throw Error('Enter the '+signupRoles[form.elements.role.value]+' campus code provided by your Admin');const path=mode==='demo-signup'?'/api/demo/signup':mode==='demo-login'?'/api/demo/login':'/api/login';const result=await api(path,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(mode==='demo-signup'){setAuthMode('demo-login');$('#login-success').textContent=result.message;$('#login-success').hidden=false;if(result.invite_codes){$('#signup-invites').innerHTML=inviteCards(result.invite_codes,true);$('#signup-invites').hidden=false;}toast(signupRoles[result.role]+' account created successfully.');form.elements.password.focus();}else{form.reset();await enterWorkspace();toast('Signed in successfully as '+roles[state.user.role]+'.');}}catch(e){$('#login-error').textContent=e.message;}});});
 $('#join-campus-form').addEventListener('submit',async event=>{event.preventDefault();$('#join-campus-error').textContent='';await busy(event.target.querySelector('[type=submit]'),async()=>{try{const result=await api('/api/campus/join',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});$('#join-campus-dialog').close();await enterWorkspace();toast(result.message);}catch(e){$('#join-campus-error').textContent=e.message;}});});
 $('#record-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.target;$('#record-error').textContent='';await busy(form.querySelector('[type=submit]'),async()=>{try{const data=Object.fromEntries(new FormData(form));data.consent=form.elements.consent.checked;data.cgpa=Number(data.cgpa);data.year=Number(data.year);if(state.editId&&state.user.role==='staff')data.email=state.rows.find(r=>r.student_id===state.editId).email;await api('/api/students'+(state.editId?'/'+encodeURIComponent(state.editId):''),{method:state.editId?'PUT':'POST',body:JSON.stringify(data)});$('#record-dialog').close();await refresh();toast(state.editId?'Student updated':'Student added');}catch(e){$('#record-error').textContent=e.message;}});});
 $('#confirm-archive').addEventListener('click',async event=>busy(event.target,async()=>{try{await api('/api/students/'+encodeURIComponent(state.archiveId),{method:'DELETE'});$('#confirm-dialog').close();await refresh();toast('Record archived. You can restore it anytime.');}catch(e){$('#confirm-error').textContent=e.message;}}));

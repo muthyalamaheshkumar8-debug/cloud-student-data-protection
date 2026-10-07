@@ -19,6 +19,16 @@ def post(client,path,data=None,method='post'):
     csrf=client.get('/api/session').json['csrf']
     return getattr(client,method)(path,json=data or {},headers={'X-CSRF-Token':csrf})
 
+def create_campus(app):
+    owner=app.test_client();owner.environ_base['REMOTE_ADDR']='campus-setup'
+    creds=dict(email='setup-admin@example.test',password='SetupPassword123!',role='admin')
+    signup=post(owner,'/api/demo/signup',creds)
+    assert signup.status_code==201
+    assert owner.get('/api/session').json['user'] is None
+    assert post(owner,'/api/demo/login',creds).status_code==200
+    assert owner.get('/api/accounts').json['invite_codes']==signup.json['invite_codes']
+    return signup.json['invite_codes']
+
 def demo(client,role='admin'): return post(client,'/api/demo',{'role':role})
 
 def sample(sid='NEW-1',**kwargs):
@@ -162,7 +172,7 @@ def test_demo_signup_login_and_workspace_isolation(app):
     assert post(a,'/api/logout').status_code==200
     assert post(a,'/api/demo/login',creds).status_code==200
     assert a.get('/api/students/PRIVATE-1').status_code==200
-    assert post(b,'/api/demo/signup',{'email':'second@example.test','password':'DemoPassword456!'}).status_code==201
+    assert post(b,'/api/demo/signup',{'email':'second@example.test','password':'DemoPassword456!','role':'admin'}).status_code==201
     assert post(b,'/api/demo/login',{'email':'second@example.test','password':'DemoPassword456!'}).status_code==200
     assert b.get('/api/students/PRIVATE-1').status_code==404
     assert post(b,'/api/login',creds).status_code==401
@@ -172,7 +182,7 @@ def test_demo_signup_login_and_workspace_isolation(app):
         assert db.execute('SELECT 1 FROM users WHERE email=?',(creds['email'],)).fetchone() is None
 
 def test_demo_account_expiration_and_disabled_signup(app,client):
-    creds={'email':'expire@example.test','password':'TemporaryPassword!'}
+    creds={'email':'expire@example.test','password':'TemporaryPassword!','role':'admin'}
     assert post(client,'/api/demo/signup',creds).status_code==201
     assert post(client,'/api/demo/login',creds).status_code==200
     with app.extensions['store'].db() as db: db.execute('UPDATE demo_accounts SET expires=0')
@@ -183,7 +193,7 @@ def test_demo_account_expiration_and_disabled_signup(app,client):
     assert post(client,'/api/demo/login',creds).status_code==404
 
 def test_demo_signup_csrf_validation_and_duplicate(client):
-    creds={'email':'new@example.test','password':'DemoPassword123!'}
+    creds={'email':'new@example.test','password':'DemoPassword123!','role':'admin'}
     assert client.post('/api/demo/signup',json=creds).status_code==403
     assert post(client,'/api/demo/signup',{**creds,'email':'invalid'}).status_code==400
     assert post(client,'/api/demo/signup',{**creds,'password':'tiny'}).status_code==400
@@ -192,8 +202,9 @@ def test_demo_signup_csrf_validation_and_duplicate(client):
     assert client.get('/api/session').json['institution_login'] is False
 
 @pytest.mark.parametrize('role',['student','staff','admin'])
-def test_signup_role_persists_and_controls_access(client,role):
+def test_signup_role_persists_and_controls_access(app,client,role):
     creds={'email':role+'@example.test','password':'RolePassword123!','name':'Sample '+role,'role':role}
+    if role!='admin':creds['campus_code']=create_campus(app)[role]
     r=post(client,'/api/demo/signup',creds)
     assert r.status_code==201 and r.json['role']==role
     assert r.json['message'].startswith(role.title()+' account created successfully')
@@ -215,12 +226,14 @@ def test_signup_role_persists_and_controls_access(client,role):
     post(client,'/api/logout')
     assert post(client,'/api/demo/login',creds).json['user']['role']==role
 
-def test_signup_default_role_and_validation(client):
+def test_signup_default_role_and_validation(app,client):
     creds={'email':'default@example.test','password':'RolePassword123!'}
     assert post(client,'/api/demo/signup',{**creds,'role':'superadmin'}).status_code==400
     assert post(client,'/api/demo/signup',{**creds,'name':123}).status_code==400
     assert post(client,'/api/demo/signup',{**creds,'name':'x'*101}).status_code==400
     assert post(client,'/api/demo/signup',{**creds,'confirm_password':'different'}).status_code==400
+    assert post(client,'/api/demo/signup',creds).status_code==400
+    creds['campus_code']=create_campus(app)['student']
     assert post(client,'/api/demo/signup',creds).json['role']=='student'
 
 def test_existing_account_schema_migrates(tmp_path):

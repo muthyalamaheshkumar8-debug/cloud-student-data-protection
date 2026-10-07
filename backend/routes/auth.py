@@ -8,6 +8,7 @@ from flask import Blueprint, current_app, g, jsonify, request, session
 from services.auth_service import store, create_user, authenticate_user, begin_session, actor
 from services.store import now
 from utils.validation import validate_student
+from services.campus_service import enrollment_campus
 
 bp=Blueprint('auth',__name__)
 
@@ -105,7 +106,9 @@ def demo_signup():
     code=d.get('campus_code','')
     if not isinstance(code,str) or len(code)>40: raise ValueError('Enter a valid campus code')
     code=code.strip().upper()
-    if code and role!='student': raise ValueError('Campus codes are for Student enrollment. Create your own workspace for Staff or Admin access.')
+    if role in ('student','staff') and not code:
+        raise ValueError(f'Enter the {role.title()} campus code provided by your Admin')
+    if code and role=='admin': raise ValueError('Admin accounts create their own campus; no campus code is needed.')
     store().purge_demo()
     uid=uuid.uuid4().hex
     workspace='demo-'+uuid.uuid4().hex
@@ -113,18 +116,20 @@ def demo_signup():
     created=time.time()
     expires=created+86400
     record=None
+    codes=None
     try:
         with store().db() as db:
             if code:
-                campus=db.execute("SELECT c.* FROM campuses c JOIN demo_accounts o ON o.id=c.owner_id WHERE c.join_code=? AND c.expires>? AND o.expires>? AND o.role='admin'",(code,created,created)).fetchone()
-                if not campus: raise ValueError('Campus code not found or expired. Ask your Admin for the current code.')
+                campus=enrollment_campus(db,code,role,created)
                 campus_workspace=campus['workspace']
                 expires=min(expires,campus['expires'])
-                record=validate_student(dict(student_id='REG-'+uid[:20],name=name or 'Registered Student',email=email,department=d.get('department','Computer Science'),year=d.get('year',1)))
-                record.update(account_id=uid,academic_pending=True,created_at=now(),updated_at=now(),archived=False)
+                if role=='student':
+                    record=validate_student(dict(student_id='REG-'+uid[:20],name=name or 'Registered Student',email=email,department=d.get('department','Computer Science'),year=d.get('year',1)))
+                    record.update(account_id=uid,academic_pending=True,created_at=now(),updated_at=now(),archived=False)
             db.execute('INSERT INTO demo_accounts (id,email,password,workspace,expires,role,name,campus_workspace,created_at,last_seen) VALUES (?,?,?,?,?,?,?,?,?,?)',(uid,email,generate_password_hash(password),workspace,expires,role,name,campus_workspace,created,0))
             if role=='admin':
-                db.execute('INSERT INTO campuses VALUES (?,?,?,?)',(workspace,uid,'CG-'+secrets.token_hex(8).upper(),expires))
+                codes=dict(student='CG-STU-'+secrets.token_hex(8).upper(),staff='CG-STF-'+secrets.token_hex(8).upper())
+                db.execute('INSERT INTO campuses (workspace,owner_id,join_code,expires,staff_code) VALUES (?,?,?,?,?)',(workspace,uid,codes['student'],expires,codes['staff']))
             if record:
                 db.execute('INSERT INTO students VALUES (?,?,?)',(campus_workspace,record['student_id'],store().encode(record)))
     except sqlite3.IntegrityError:
@@ -132,7 +137,7 @@ def demo_signup():
     try:
         if not campus_workspace:
             seed_demo(workspace,student_email=email if role=='student' else 'student.demo@example.test',student_name=name if role=='student' else None)
-        store().audit(campus_workspace or workspace,'Student enrolled' if campus_workspace else 'Account created','user-'+uid[:8],role)
+        store().audit(campus_workspace or workspace,role.title()+' enrolled' if campus_workspace else 'Account created','user-'+uid[:8],role)
     except Exception:
         with store().db() as db:
             db.execute('DELETE FROM demo_accounts WHERE id=?',(uid,))
@@ -142,7 +147,9 @@ def demo_signup():
             if record: db.execute('DELETE FROM students WHERE workspace=? AND id=?',(campus_workspace,record['student_id']))
         raise
     label={'student':'Student','staff':'Staff','admin':'Admin'}[role]
-    return jsonify(message=f'{label} account created successfully. Sign in to open your workspace.',role=role,name=name),201
+    result=dict(message=f'{label} account created successfully. '+('Your Student and Staff campus codes are ready below. Sign in to manage your campus.' if codes else 'You have joined your Admin campus. Sign in to open your workspace.'),role=role,name=name)
+    if codes:result['invite_codes']=codes
+    return jsonify(result),201
 
 @bp.post('/api/demo/login')
 def demo_login():

@@ -45,8 +45,15 @@ class Store:
                 if column not in columns:
                     db.execute(f'ALTER TABLE demo_accounts ADD COLUMN {column} {definition}')
             db.execute('CREATE INDEX IF NOT EXISTS accounts_campus ON demo_accounts(campus_workspace)')
+            campus_columns={r['name'] for r in db.execute('PRAGMA table_info(campuses)')}
+            if 'staff_code' not in campus_columns:
+                db.execute("ALTER TABLE campuses ADD COLUMN staff_code TEXT NOT NULL DEFAULT ''")
             for account in db.execute("SELECT id,workspace,expires FROM demo_accounts WHERE role='admin' AND expires>? AND id NOT IN (SELECT owner_id FROM campuses)",(time.time(),)).fetchall():
-                db.execute('INSERT INTO campuses VALUES (?,?,?,?)',(account['workspace'],account['id'],'CG-'+secrets.token_hex(8).upper(),account['expires']))
+                db.execute('INSERT INTO campuses (workspace,owner_id,join_code,expires,staff_code) VALUES (?,?,?,?,?)',(account['workspace'],account['id'],'CG-STU-'+secrets.token_hex(8).upper(),account['expires'],'CG-STF-'+secrets.token_hex(8).upper()))
+            # Existing Student codes keep working; add an independent Staff code.
+            for campus in db.execute("SELECT workspace FROM campuses WHERE staff_code='' OR staff_code IS NULL").fetchall():
+                db.execute('UPDATE campuses SET staff_code=? WHERE workspace=?',('CG-STF-'+secrets.token_hex(8).upper(),campus['workspace']))
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS campus_staff_code ON campuses(staff_code) WHERE staff_code<>''")
             db.execute('DELETE FROM sessions WHERE expires < ?', (time.time(),))
             db.execute('DELETE FROM limits WHERE start < ?', (time.time()-3600,))
 
