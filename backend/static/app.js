@@ -14,6 +14,7 @@ function setAuthMode(mode){
  form.elements.password.value='';form.elements.confirm_password.value='';
  form.elements.password.type='password';form.elements.confirm_password.type='password';$('#show-password').checked=false;
  $('#signup-fields').hidden=!signup;$('#confirm-password-field').hidden=!signup;
+ $('#demo-entry').hidden=signup||$('#auth-modes').hidden;
  form.elements.name.disabled=!signup;form.elements.name.required=signup;
  form.elements.confirm_password.disabled=!signup;form.elements.confirm_password.required=signup;
  form.querySelectorAll('[name=role]').forEach(el=>el.disabled=!signup);
